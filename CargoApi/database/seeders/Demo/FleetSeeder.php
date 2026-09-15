@@ -10,6 +10,7 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Enums\Role;
 use App\Domain\Vehicle\Models\MaintenanceJob;
 use App\Domain\Vehicle\Models\Vehicle;
+use Database\Seeders\Concerns\SeedsIntoACompany;
 use Database\Seeders\UserSeeder;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -23,16 +24,20 @@ use Illuminate\Support\Facades\Hash;
  */
 class FleetSeeder extends Seeder
 {
+    use SeedsIntoACompany;
+
     public function run(): void
     {
-        // The accounts are not demo data — they are how anyone signs in.
-        // Called rather than duplicated, so there is one definition of them.
-        $this->call(UserSeeder::class);
+        $this->intoCompany(function (): void {
+            // The accounts are not demo data — they are how anyone signs in.
+            // Called rather than duplicated, so there is one definition of them.
+            $this->call(UserSeeder::class);
 
-        $this->drivers();
-        $this->vehicles();
-        $this->customers();
-        $this->customerAccount();
+            $this->drivers();
+            $this->vehicles();
+            $this->customers();
+            $this->customerAccount();
+        });
     }
 
     private function drivers(): void

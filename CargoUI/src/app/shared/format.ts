@@ -33,6 +33,24 @@ export const fmt = {
     return `${symbol}${(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   },
 
+  /**
+   * The same, to the centavo — for documents rather than dashboards.
+   *
+   * `money()` rounds to whole pesos, which is right on a tile where the figure
+   * is a size and the decimals are noise. It is wrong on a statement, a payslip
+   * or a trial balance: those are documents somebody adds up, and a column of
+   * rounded rows will not sum to a rounded total. Anything that has to
+   * reconcile uses this one.
+   */
+  pesos(cents: number, currency = 'PHP'): string {
+    const symbol = currency === 'PHP' ? '₱' : '';
+
+    return `${symbol}${(cents / 100).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  },
+
   kg(value: number): string {
     return `${value.toLocaleString()} kg`;
   },

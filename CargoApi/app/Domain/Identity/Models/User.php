@@ -7,7 +7,9 @@ namespace App\Domain\Identity\Models;
 use App\Domain\Customer\Models\Customer;
 use App\Domain\Driver\Models\Driver;
 use App\Domain\Identity\Models\Role as RoleRecord;
+use App\Domain\Identity\Notifications\ResetPasswordLink;
 use App\Domain\Shared\Enums\Role;
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -27,9 +29,11 @@ use Laravel\Sanctum\HasApiTokens;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable;
+    use BelongsToCompany, HasApiTokens, HasFactory, Notifiable;
 
-    protected $fillable = ['name', 'email', 'password', 'role', 'customer_id', 'avatar_url'];
+    protected $fillable = [
+        'name', 'email', 'phone', 'password', 'role', 'customer_id', 'chooses_carrier', 'avatar_url',
+    ];
 
     protected $hidden = ['password', 'remember_token'];
 
@@ -38,6 +42,10 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            // Which of the two kinds of customer account this is — see the
+            // migration that added the column. False for every account an
+            // office created, which is every account that predates it.
+            'chooses_carrier' => 'boolean',
             // `role` is deliberately NOT cast to the enum any more. It is a key
             // into the `roles` table, and an install that adds a Treasury
             // Officer would throw on every read if the cast were still here.
@@ -56,6 +64,19 @@ class User extends Authenticatable
         $this->attributes['role'] = $value instanceof \BackedEnum
             ? $value->value
             : (string) $value;
+    }
+
+    /**
+     * Send the reset link to the SPA, not to a web route.
+     *
+     * The framework's default builds its URL from `route('password.reset')`,
+     * and this application has no web pages to hang such a route on. Overriding
+     * here rather than rebinding the notification globally keeps the decision
+     * next to the model that owns the address it is sent to.
+     */
+    public function sendPasswordResetNotification($token): void
+    {
+        $this->notify(new ResetPasswordLink($token));
     }
 
     /**
@@ -99,6 +120,61 @@ class User extends Authenticatable
      * with nothing to show, which is why every portal endpoint says so
      * plainly rather than returning an empty page.
      */
+    /**
+     * May this account shop around?
+     *
+     * True only for a shipper who signed themselves up on the platform. An
+     * account the office created is that haulier's customer and is shown no
+     * other haulier — see the migration for why that is the right default and
+     * not a limitation.
+     */
+    public function choosesCarrier(): bool
+    {
+        return (bool) $this->chooses_carrier;
+    }
+
+    /**
+     * Has this shipper signed up but not yet chosen anybody to carry a load?
+     *
+     * The one account in the system that belongs to no company, and it is a
+     * waiting room rather than a place to live: registering asks for a name, a
+     * number and a password and nothing else, so between signing up and filing
+     * a first request there is genuinely no haulier this login is a customer
+     * of. `ShipperAccounts::open()` ends it — the first request picks a carrier,
+     * that carrier's books get an ordinary `customers` row, and the company and
+     * the customer are written back onto this row.
+     *
+     * What it is *not* is an account with the run of the platform. The company
+     * in force for a request like this is `Tenant::NOBODY`, so every scoped read
+     * answers empty and every scoped write is refused. The two things it can do
+     * are read the carrier directory and file the request that ends this state.
+     *
+     * A company-less login that is *not* a self-registered shipper is a broken
+     * row rather than a waiting one — an account somebody detached, or one whose
+     * company was deleted — and is turned away at the door, as it always was.
+     */
+    public function awaitingCarrier(): bool
+    {
+        return $this->company_id === null
+            && $this->choosesCarrier()
+            && $this->role === Role::Customer->value;
+    }
+
+    /**
+     * The one exception to "every row belongs to a company".
+     *
+     * Narrow on purpose, and checked against the row being written rather than
+     * against the account doing the writing: only a self-registered customer
+     * login may be created without one. Every other user — a driver, a
+     * dispatcher, an administrator, a customer the office added — still throws,
+     * because there is no honest reason for one of those to exist outside the
+     * company it works for.
+     */
+    protected function mayHaveNoCompany(): bool
+    {
+        return $this->awaitingCarrier();
+    }
+
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);

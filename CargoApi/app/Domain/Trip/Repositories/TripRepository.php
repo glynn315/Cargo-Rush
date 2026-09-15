@@ -30,7 +30,14 @@ class TripRepository extends Repository
     public function query(): Builder
     {
         return Trip::query()
-            ->with(['customer:id,name', 'driver:id,name', 'helper:id,name', 'vehicle:id,plate'])
+            ->with([
+                'customer:id,name', 'driver:id,name', 'helper:id,name', 'vehicle:id,plate',
+                // The pre-trip check rides along because every list that shows a
+                // run now says whether the unit was cleared before it rolled —
+                // the driver's queue, the office board and the customer's own
+                // deliveries. One eager load beats a query per row.
+                'latestInspection.driver:id,name',
+            ])
             ->orderByDesc('scheduled_at');
     }
 

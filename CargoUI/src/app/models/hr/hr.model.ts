@@ -41,6 +41,17 @@ export interface Employee extends Timestamped {
   base_salary_cents: number;
   /** Resolved on read, never stored — moving the install must not orphan it. */
   photo_url: string | null;
+  /**
+   * Whether the job this person holds drives, and their licence if it does.
+   *
+   * The licence is read off the `drivers` row rather than copied onto the
+   * employee, so a renewal recorded in Drivers Management shows here without
+   * two columns having to be kept in step. Null for everybody who does not
+   * drive, which is most of the office.
+   */
+  position_drives: boolean;
+  licence_no: string | null;
+  licence_expiry: string | null;
   driver_id: string | null;
   driver_name: string | null;
   user_id: number | null;

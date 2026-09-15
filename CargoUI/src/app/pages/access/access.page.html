@@ -1,3 +1,24 @@
+<!--
+  The company itself, above the roles.
+
+  It sits here rather than on a settings page of its own: this is already the
+  administrator's screen, and a page holding one card is a menu item somebody
+  has to go looking for. Hidden from anybody without `company.manage` — a
+  general manager holds it, an HR officer who can see roles does not.
+-->
+@if (canManageCompany()) {
+  <!--
+    Two cards, side by side on a wide screen: who the company is, and where it
+    is. The second is what puts the firm on the carrier list customers pick from
+    in the app, and for any company that registered before that list existed it
+    is the only way onto it.
+  -->
+  <div class="mb-4 grid gap-4 lg:grid-cols-2">
+    <app-company-card />
+    <app-yard-card />
+  </div>
+}
+
 <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
   <div
     class="inline-flex rounded-control border border-cr-line p-0.5"

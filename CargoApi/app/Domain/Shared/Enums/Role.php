@@ -53,13 +53,28 @@ enum Role: string
              */
             self::Accountant => [
                 'trips.view', 'fuel.view', 'fuel.manage', 'finance.view',
-                'finance.manage', 'customers.view', 'billing.view', 'billing.manage',
+                'finance.manage',
+                // The general journal and the general ledger. The accountant's
+                // own book: posting to it decides what every statement
+                // afterwards says. Payroll is theirs to run for the same
+                // reason — it is the largest entry of the month.
+                'accounting.view', 'accounting.manage',
+                'payroll.view', 'payroll.manage',
+                'customers.view', 'billing.view', 'billing.manage',
                 'pricing.view', 'pricing.manage', 'expenses.view', 'expenses.manage',
                 'sales.view', 'notifications.view',
             ],
+            /**
+             * A `write` for each thing a driver does, and no `view` or `manage`
+             * for any of them. `incidents.write` is the newest and follows the
+             * same rule: the person who was there reports what happened, and
+             * reading the log, editing a write-up and closing one out stay with
+             * the office.
+             */
             self::Driver => [
                 'trips.view', 'gps.write', 'delivery.view', 'delivery.write',
-                'inspection.write', 'finance.write', 'notifications.view',
+                'inspection.write', 'incidents.write', 'finance.write',
+                'notifications.view',
             ],
             /**
              * A customer books their own work and reads their own money, and

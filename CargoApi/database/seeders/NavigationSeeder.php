@@ -36,7 +36,25 @@ class NavigationSeeder extends Seeder
             ['summary', 'Quarterly Summary', 'calendar', '/summary', 87, false, true, 'Finance', 'finance.view', null],
 
             ['expenses', 'Other Expenses', 'wallet', '/expenses', 88, false, true, 'Finance', 'expenses.view', null],
-            ['sales', 'Sales Report', 'trend', '/sales', 89, false, true, 'Finance', 'sales.view', null],
+
+            // The books. After the workbook pages and before the sales report,
+            // which is the order they are worked in: the sheets are kept, the
+            // entries are posted from them, the ledger is read off those.
+            // The statements first: they are what the books are *for*, and the
+            // journal and the ledger are how they get there. `order` is a small
+            // integer, so making room means renumbering what follows rather
+            // than slipping a fraction in — which the column would round into a
+            // tie.
+            ['statements', 'Financial Statements', 'trend', '/statements', 89, false, true, 'Finance', 'accounting.view', null],
+            ['journal', 'General Journal', 'clipboard', '/journal', 90, false, true, 'Finance', 'accounting.view', null],
+            ['ledger', 'General Ledger', 'gauge', '/ledger', 91, false, true, 'Finance', 'accounting.view', null],
+            ['accounts', 'Chart of Accounts', 'tag', '/accounts', 92, false, true, 'Finance', 'accounting.view', null],
+
+            // Moved from 89 to make room above it. `order` is a small integer
+            // and the three books belong together between the workbook pages
+            // and the sales report — the alternative was fractional positions,
+            // which the column would have quietly rounded into a tie.
+            ['sales', 'Sales Report', 'trend', '/sales', 93, false, true, 'Finance', 'sales.view', null],
 
             // Business
             ['customers', 'Customer Management', 'customers', '/customers', 90, false, true, 'Business', 'customers.view', null],
@@ -50,9 +68,14 @@ class NavigationSeeder extends Seeder
             ['applicants', 'Applicants', 'inbox', '/applicants', 107, false, true, 'HR', 'hr.view', 'applicants.open'],
             ['time-off', 'Leave & Undertime', 'calendar', '/time-off', 108, false, true, 'HR', 'hr.view', 'timeoff.open'],
             ['performance', 'Performance', 'gauge', '/performance', 109, false, true, 'HR', 'hr.view', null],
+            // Payroll sits with the people rather than with the money: it is
+            // read by whoever answers for the roster, and run by whoever signs
+            // the cheque. Its own permission keeps those apart.
+            ['payroll', 'Payroll', 'wallet', '/payroll', 110, false, true, 'HR', 'payroll.view', null],
             // Its own permission, not `hr.manage`: whoever runs the roster does
             // not thereby get to grant themselves the ledger.
-            ['access', 'Access Control', 'shield', '/access', 110, false, true, 'HR', 'access.view', null],
+            // Moved down to make room for payroll above it.
+            ['access', 'Access Control', 'shield', '/access', 111, false, true, 'HR', 'access.view', null],
 
             // Support. Numbered after HR so the two groups do not interleave.
             ['incidents', 'Incident Management', 'incident', '/incidents', 130, false, true, 'Support', 'incidents.view', 'incidents.open'],

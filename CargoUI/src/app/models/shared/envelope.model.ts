@@ -64,6 +64,30 @@ export interface ListQuery {
   active?: boolean | number;
   /** Sales: which bucket size the roll-up should use. */
   granularity?: 'daily' | 'weekly' | 'monthly';
+  /**
+   * The books: which kind of journal entry, and which account it touched.
+   *
+   * `category` rather than `category_id` because a journal category is one of a
+   * fixed set the API names, not a row somebody added — see `JournalCategory`
+   * on the server.
+   */
+  category?: string;
+  account_id?: string;
+  /**
+   * A trial balance is a moment, not a period.
+   *
+   * Every other date filter here is one end of a range. This one is the whole
+   * question: what did the books stand at on this day.
+   */
+  as_of?: string;
+  /**
+   * Payroll: which month's pay periods to offer, as `2026-09`.
+   *
+   * A month rather than a range, because payroll's periods are the halves of a
+   * month and asking for "the periods between two dates" would be asking a
+   * question the schedule cannot answer.
+   */
+  month?: string;
 }
 
 /** Every resource carries these; a module's model extends it. */

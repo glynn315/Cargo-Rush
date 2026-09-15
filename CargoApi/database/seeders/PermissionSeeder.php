@@ -49,6 +49,24 @@ class PermissionSeeder extends Seeder
         // Finance
         ['finance.view', 'View finance', 'Finance', 'Trip monitoring, profitability and the quarterly summary.'],
         ['finance.manage', 'Manage the ledger', 'Finance', 'Enter and correct daily sheets and units.'],
+        /**
+         * The books proper, and a deliberate line between reading them and
+         * posting to them. Reading the general journal and the ledger is a
+         * management job; writing an entry decides what every statement
+         * afterwards says, and voiding one is a correction to the record.
+         */
+        ['accounting.view', 'View the books', 'Finance', 'The chart of accounts, the general journal and the general ledger.'],
+        ['accounting.manage', 'Post to the books', 'Finance', 'Write, post and void journal entries, and keep the chart of accounts.'],
+        /**
+         * Payroll, and a line between reading it and running it.
+         *
+         * A payslip is somebody's private business, so seeing the runs is its
+         * own permission rather than part of `hr.view` — the roster and the pay
+         * are different rooms. Running one moves money and posts to the books,
+         * which is why approving and paying are the tighter half.
+         */
+        ['payroll.view', 'View payroll', 'HR', 'Pay runs and payslips.'],
+        ['payroll.manage', 'Run payroll', 'HR', 'Build, approve and pay a payroll run.'],
         ['finance.write', 'Record from the cab', 'Finance', 'A driver filing the day’s figures from the handset.'],
         ['expenses.view', 'View expenses', 'Finance', 'Categorised spend and the expense report.'],
         ['expenses.manage', 'Manage expenses', 'Finance', 'File, approve and categorise spend.'],
@@ -72,9 +90,19 @@ class PermissionSeeder extends Seeder
         ['access.view', 'View access control', 'Access', 'See roles, positions and who holds what.'],
         ['access.manage', 'Manage access control', 'Access', 'Create roles and change what they reach.'],
 
+        // The company's own identity, kept apart from access control. Editing
+        // the logo is not handing out keys, and somebody trusted to keep the
+        // company's details right is not thereby trusted to grant themselves
+        // the ledger.
+        ['company.manage', 'Manage the company', 'Company', 'The company name, contact details and logo.'],
+
         // Support
         ['incidents.view', 'View incidents', 'Support', 'The incident log.'],
         ['incidents.manage', 'Manage incidents', 'Support', 'Raise and close out incidents.'],
+        // The driver's half, and deliberately not `manage`: report what
+        // happened on your own run, from the road. The log itself, editing a
+        // write-up and closing one out are the office's.
+        ['incidents.write', 'Report incidents', 'Support', 'Report an incident from the road.'],
         ['notifications.view', 'View notifications', 'Support', 'The in-app feed.'],
 
         // Customer portal

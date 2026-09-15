@@ -119,6 +119,8 @@ describe('scheduled work becomes due', function (): void {
 describe('the driver starts the run', function (): void {
     it('moves assigned to in transit and opens the dispatch record', function (): void {
         $id = ($this->waiting)();
+        // A unit does not roll without a passing pre-trip check.
+        $this->passPreTripCheck($id);
 
         $this->actingAs($this->marco)
             ->postJson("/api/v1/trips/{$id}/start", ['location' => 'Manila depot · Bay 3'])
@@ -134,6 +136,7 @@ describe('the driver starts the run', function (): void {
 
     it('falls back to the booked pickup place when the handset has no fix', function (): void {
         $id = ($this->waiting)(['pickup_place' => 'Sta. Mesa yard']);
+        $this->passPreTripCheck($id);
 
         $this->actingAs($this->marco)->postJson("/api/v1/trips/{$id}/start", [])->assertOk();
 
@@ -186,6 +189,8 @@ describe('the driver starts the run', function (): void {
     it('will not put one driver on two runs at once', function (): void {
         $first = ($this->waiting)();
         $second = ($this->waiting)();
+        $this->passPreTripCheck($first);
+        $this->passPreTripCheck($second);
 
         $this->actingAs($this->marco)->postJson("/api/v1/trips/{$first}/start", [])->assertOk();
         $this->actingAs($this->marco)->postJson("/api/v1/trips/{$second}/start", [])->assertStatus(422);
@@ -203,6 +208,10 @@ describe('the driver starts the run', function (): void {
 
         $this->artisan('cargo:trips-release');
         expect(Trip::findOrFail($id)->status)->toBe(StatusValue::Assigned);
+
+        // The check the driver runs at the yard gate, in its place in the
+        // sequence: released, checked, then out on the road.
+        $this->passPreTripCheck($id);
 
         $this->actingAs($this->marco)->postJson("/api/v1/trips/{$id}/start", [])->assertOk();
         expect(Trip::findOrFail($id)->status)->toBe(StatusValue::InTransit);

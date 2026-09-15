@@ -6,6 +6,7 @@ namespace App\Domain\Finance\Console;
 
 use App\Domain\Finance\Services\FinanceService;
 use App\Domain\Shared\Enums\StatusValue;
+use App\Domain\Tenancy\Console\Concerns\RunsPerCompany;
 use App\Domain\Trip\Models\Trip;
 use Illuminate\Console\Command;
 
@@ -23,11 +24,19 @@ use Illuminate\Console\Command;
  */
 class BackfillLedgerRowsCommand extends Command
 {
+    use RunsPerCompany;
+
     protected $signature = 'cargo:ledger-backfill {--dry-run : List what would be opened and change nothing}';
 
     protected $description = 'Open Trip Monitoring day rows for trips that were already delivered';
 
     public function handle(FinanceService $finance): int
+    {
+        return $this->eachCompany(fn () => $this->backfill($finance));
+    }
+
+    /** One company's delivered runs, opened onto its own sheet. */
+    private function backfill(FinanceService $finance): void
     {
         $delivered = Trip::query()
             ->with('vehicle:id,plate')
@@ -39,7 +48,7 @@ class BackfillLedgerRowsCommand extends Command
         if ($delivered->isEmpty()) {
             $this->info('No delivered trips with a unit assigned. Nothing to open.');
 
-            return self::SUCCESS;
+            return;
         }
 
         $dryRun = (bool) $this->option('dry-run');
@@ -74,7 +83,5 @@ class BackfillLedgerRowsCommand extends Command
         $this->info($dryRun
             ? "{$opened} row(s) would be opened. Re-run without --dry-run to apply."
             : "Opened {$opened} row(s) from {$delivered->count()} delivered trip(s).");
-
-        return self::SUCCESS;
     }
 }

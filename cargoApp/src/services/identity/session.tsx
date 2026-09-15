@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { Platform } from 'react-native';
 
-import { Credentials, Me } from '@/models/identity/identity.model';
+import { Credentials, Me, ShipperRegistration } from '@/models/identity/identity.model';
 
 import { api } from '../shared/api.service';
 import { identityService } from './identity.service';
@@ -21,6 +21,15 @@ export type SessionState = {
   /** True while restoring on launch — the app shows nothing rather than a flash of the sign-in form. */
   restoring: boolean;
   signIn: (credentials: Omit<Credentials, 'device_name'>) => Promise<void>;
+  /**
+   * Sign a new firm up and open the app on them.
+   *
+   * Beside `signIn` rather than inside the registration screen, because what it
+   * has to do afterwards is identical — keep the token, and put a `me` in
+   * context — and a second copy of that would be a second place for the token
+   * to be forgotten.
+   */
+  register: (registration: Omit<ShipperRegistration, 'device_name'>) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -84,6 +93,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setMe(user);
   }, []);
 
+  const register = useCallback(
+    async (registration: Omit<ShipperRegistration, 'device_name'>) => {
+      const user = await identityService.registerCustomer({
+        ...registration,
+        device_name: deviceName(),
+      });
+
+      const token = api.token;
+      if (token !== null) await tokenStore.write(token);
+
+      setMe(user);
+    },
+    [],
+  );
+
   const signOut = useCallback(async () => {
     // Cleared locally first: a driver who taps sign out is signed out whether
     // or not the network agrees.
@@ -95,8 +119,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<SessionState>(
-    () => ({ me, restoring, signIn, signOut }),
-    [me, restoring, signIn, signOut],
+    () => ({ me, restoring, signIn, register, signOut }),
+    [me, restoring, signIn, register, signOut],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

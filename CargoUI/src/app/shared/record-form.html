@@ -15,8 +15,13 @@
       </p>
     }
 
+    <!--
+      `visibleFields()`, not `spec.fields`: a field can declare `showWhen` and
+      appear only once the rest of the form calls for it. The control stays in
+      the group either way — hiding one drops its validators, not its value.
+    -->
     <form [formGroup]="form()" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-      @for (field of spec.fields; track field.key) {
+      @for (field of visibleFields(); track field.key) {
         <app-field
           [label]="field.label"
           [required]="!!field.required"

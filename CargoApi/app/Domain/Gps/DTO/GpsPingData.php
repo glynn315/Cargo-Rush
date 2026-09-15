@@ -6,12 +6,23 @@ namespace App\Domain\Gps\DTO;
 
 use App\Domain\Shared\DTO\Data;
 
-/** What the handset posts while it is moving. */
+/**
+ * What the handset posts while it is moving.
+ *
+ * `location` and the coordinates are both here and they are not the same
+ * thing. `location` is what a person reads — a place name where there is one,
+ * and the formatted pair where there is not. `lat`/`lng` are what a map draws
+ * and a bounding box filters on. The phone used to send only the first, having
+ * stringified the second on the way out, which is why nothing in the system
+ * could plot a route it had every point of.
+ */
 final class GpsPingData extends Data
 {
     public function __construct(
         public readonly ?string $trip_id = null,
         public readonly ?string $location = null,
+        public readonly ?float $lat = null,
+        public readonly ?float $lng = null,
         public readonly ?int $speed_kph = null,
         public readonly ?string $heading = null,
         public readonly ?int $progress_pct = null,
@@ -24,6 +35,8 @@ final class GpsPingData extends Data
         return new self(
             trip_id: $attributes['trip_id'] ?? null,
             location: $attributes['location'] ?? null,
+            lat: isset($attributes['lat']) ? (float) $attributes['lat'] : null,
+            lng: isset($attributes['lng']) ? (float) $attributes['lng'] : null,
             speed_kph: isset($attributes['speed_kph']) ? (int) $attributes['speed_kph'] : null,
             heading: $attributes['heading'] ?? null,
             progress_pct: isset($attributes['progress_pct']) ? (int) $attributes['progress_pct'] : null,
@@ -37,6 +50,8 @@ final class GpsPingData extends Data
         return [
             'trip_id' => $this->trip_id,
             'location' => $this->location,
+            'lat' => $this->lat,
+            'lng' => $this->lng,
             'speed_kph' => $this->speed_kph,
             'heading' => $this->heading,
             'progress_pct' => $this->progress_pct,

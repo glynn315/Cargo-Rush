@@ -10,7 +10,74 @@ guide goes in the order that works: the things other things depend on, first.
 
 ## 1. Getting in
 
+### Register your company first
+
+**Nobody signs in until a company exists.** Open the back office and choose **Register your
+company** under the sign-in form. It asks for two things at once:
+
+| | What to put in it |
+| --- | --- |
+| **Company name** | Your trading name, as it appears on your own paperwork |
+| Contact number, address | Optional. How to reach you about the account itself. |
+| **Full name, email, password** | You. This becomes the first account. |
+
+Pressing **Create company** does everything in one go: it makes the company, gives it its starting
+roles, job titles and expense categories, creates your account as the **administrator**, and signs
+you in. You land on the dashboard, not back at a login form.
+
+You are the administrator because you are the only person there — somebody has to be able to
+create the second account. You can hand the role on and step down later.
+
+### Your company is your own
+
+Everything you enter — every truck, driver, customer, trip, peso and payslip — belongs to your
+company and **nobody outside it can see any of it**. Another haulier using the same system sees
+none of your work, and you see none of theirs. There is no setting that widens this and no screen
+that crosses it.
+
+That has a few consequences worth knowing up front:
+
+- **You can name things whatever you like.** Your "Truck 1" does not clash with anybody else's,
+  and your trip references start at `CR-24801` regardless of how long the system has been running
+  for other firms.
+- **The roles are yours to rename and re-tick.** Calling your dispatchers "controllers" changes
+  it for you and for nobody else. Same for job titles and expense categories.
+- **An email address belongs to one account.** That is why signing in asks only for your address
+  and password — the address already says which company to open. It also means one person cannot
+  hold accounts at two companies with the same address.
+- **The company name is in the sidebar**, under the Cargo Rush wordmark, so it is always clear
+  whose system is on screen.
+
+### Your logo
+
+**Access Control → Company → Upload logo.** It appears in the sidebar beside your name, on every
+screen, for everybody in the company.
+
+Any ordinary image file works — PNG, JPEG, GIF or WebP. You do not have to size or crop it first:
+whatever you upload is squared off from the middle and resized to the 64×64 the sidebar uses, so a
+wide banner keeps its centre and a large file is not sent to everybody's browser on every page.
+
+A few things worth knowing before you pick one:
+
+- **Square images work best**, because the middle of anything else is what survives the crop. A
+  wide lockup with the name beside the mark usually loses the name; the mark on its own is the
+  one to upload.
+- **A transparent background stays transparent.** Save it as a PNG if the mark is not on a solid
+  colour.
+- **It is small on screen.** It renders at about the size of a fingernail, so anything with fine
+  text in it will not read. Look at it in the sidebar before deciding it is right.
+- **Replacing it is just uploading again.** The old one is removed for you.
+- **No logo is fine.** The sidebar shows your initials instead — "SF" for Southern Freight — and
+  **Remove** puts you back to that.
+
+Only an **administrator** or a **general manager** can change it. Everybody else sees it and
+cannot touch it.
+
 ### The accounts you start with
+
+> **Only on an install that has been set up for you.** A company you registered yourself starts
+> with exactly one account — yours. The three below belong to the demonstration company that ships
+> with a new deployment.
 
 Setting the system up creates three accounts, one per role, so every part of it can be opened and
 checked from day one:
@@ -35,8 +102,14 @@ On the machine running the system:
 php artisan cargo:user
 ```
 
-It asks for a name, an email address, a role, and a password. The password is typed rather than
-passed as an option, so it does not end up in the command history.
+It asks which company the account belongs to, then a name, an email address, a role, and a
+password. The password is typed rather than passed as an option, so it does not end up in the
+command history.
+
+**The company question comes first, and it is the one to get right.** It decides whose fleet this
+person will be looking at, and an account created in the wrong company is a working login staring
+at somebody else's books. On an install with only one company it is not asked at all. Otherwise
+you pick from a list, or name one with `--company=` (its name, its code or its id).
 
 Creating a **driver** also asks for their licence number and expiry, because a driver account
 without a driver record signs in fine and then has nothing to show.
@@ -52,11 +125,31 @@ the firm in **Customer Management** already creates its account (section 2,
 step 3). Use this command to give a *second* person at the same firm their own
 login, or to choose the password yourself rather than take the starting one.
 
+### If you forget your password
+
+**Sign in → Forgotten your password?** Type the address you sign in with and a link is emailed to
+you. It works once and stops working after an hour.
+
+The screen says *"if that address has an account"* rather than *"we've emailed you"*, deliberately.
+The system will not confirm whether an address is on file — otherwise anybody could use that form
+to find out which of their competitors' staff are on this platform.
+
+> **Resetting signs you out everywhere.** Phones, other browsers, everything. That is the point:
+> the usual reason for a reset is a password somebody else may have. Changing your password from
+> inside the app instead (which asks for your current one) leaves your other devices alone.
+
+Nothing arrives? Check the spam folder, and check the address — a mistyped one produces exactly the
+same screen as a correct one.
+
 ### Signing in
 
-Open the back office and sign in with that email and password. If the password is wrong the
-screen says so; if it says it cannot reach the server, the system is not running rather than the
-password being wrong. They are different problems and the screen tells you which.
+Open the back office and sign in with that email and password. **There is no company to choose** —
+your address already says which one to open, and you land in it.
+
+If the password is wrong the screen says so; if it says it cannot reach the server, the system is
+not running rather than the password being wrong. They are different problems and the screen tells
+you which. If it says your company is suspended, that is a billing matter and not a password one —
+nothing has been deleted, and everything comes back when it is reactivated.
 
 ### The five roles
 
@@ -70,6 +163,11 @@ password being wrong. They are different problems and the screen tells you which
 
 The sidebar shows what the role is allowed to open, so a dispatcher does not see a Billing menu
 they cannot use.
+
+**These five are a starting point, not a fixed list.** They are your company's own rows: rename
+them, re-tick what each reaches, and add the ones your office actually has — a Treasury Officer, a
+General Manager, a Yard Boss. **Access Control** is where that is done, and nothing you change
+there affects any other company on the system.
 
 **A customer is not a cut-down member of staff.** They reach a different set of
 screens entirely, and every one of them is scoped to their own company: they
@@ -96,6 +194,13 @@ a helper is a driver record without the keys. There is no separate helper screen
 | Licence expiry | The system warns you 90 days out |
 | LTMS violations | On record. Leave at 0 if none. |
 | Status | **Available** means free to be assigned a trip |
+
+> **Or register them in Employees instead, and skip this screen.** Registering
+> somebody into the **Driver** or **Helper** position asks for their licence and
+> opens the driver record for you — see section 2A. Both routes end at the same
+> record, so use whichever you are already on. Drivers Management is the quicker
+> one when you are entering the whole fleet at the start; Employees is the right
+> one from then on, because it captures the person as well as the licence.
 
 ### Step 2 — Vehicles
 
@@ -149,6 +254,65 @@ A unit with no plate yet is fine — enter the name, leave the plate empty. It s
 still counts in every total.
 
 Linking a unit to a vehicle is optional. The link is useful; the unit works without it.
+
+---
+
+## 2A. Putting people on the roster
+
+**Employees → Register employee.**
+
+An employee is the person: their name, their contact, when they were hired, what
+they are paid. It is not their login and it is not their driving history — the
+system keeps those separately and links to them, so a driver's trips survive a
+change of job title and a member of staff can exist without ever signing in.
+
+### The driver details only appear if the job needs them
+
+**Pick the position first.** Choose **Driver** or **Helper** and two more fields
+appear: **licence number** and **licence expiry**. Choose Mechanic, Office Staff,
+Accountant or anything else and they do not — there is nothing to fill in and
+nothing to skip past.
+
+That is the whole rule, and it is read off the position, not off the words in
+the title. A job counts as driving when its **default role is Driver**, which is
+what you set when you added the position in Access Control. So a company that
+adds "Long-haul Driver" or "Yard Marshal" gets the licence fields on those too,
+without anybody having to tick a second box — because giving somebody the
+driver's access is the same decision as saying they need a driver record.
+
+> **A typed-in Custom title never asks for a licence.** Only the managed list
+> knows which jobs drive. If you are registering somebody who drives, pick the
+> position from the list rather than typing the title.
+
+### You do not have to check whether they are already on the fleet
+
+Type the licence number and the system works out the rest:
+
+- **Already on file** — it links to that driver record and leaves it standing.
+  Their trips, their completed count and their on-time rate are all untouched.
+  Only the expiry is updated, because recording a renewal is exactly what you
+  are doing when you retype it.
+- **Not on file** — it opens the driver record for them, ready to be assigned a
+  trip.
+
+Either way there is one record, not two. This replaces the old **Driver record**
+dropdown, which asked you to pick from a list of every driver in the fleet — a
+question a mechanic's registration had no business asking, and one a new
+driver's registration could not answer, because their record did not exist yet.
+
+**One licence, one employee.** If the number you type is already on somebody
+else's record, the screen says whose. That is either a typo or two people being
+registered as the same driver, and both are worth stopping.
+
+### Moving somebody onto the road later
+
+Edit them, change the position to Driver, and the licence fields appear. Filling
+them in opens the driver record then.
+
+**Moving somebody off the road does not delete anything.** Change a driver's
+position to something that does not drive and their driver record stays exactly
+where it is — every trip in the system points at it, and taking it away would
+quietly rewrite who drove what.
 
 ---
 
@@ -426,11 +590,71 @@ Pick the direction first, because it changes what is required:
 
 A due date cannot precede the issue date.
 
+### Tax on an invoice
+
+**An invoice total is not what the customer pays.** Every receivable now shows
+four figures, and they are all worked out for you:
+
+```
+  Net             10,000.00     the haul, from the rate card
++ VAT 12%          1,200.00     charged on, you remit it
+= Invoiced        11,200.00     what the document says
+- Withheld 2%       -224.00     the customer keeps this back and remits it
+= Due             10,976.00     what actually lands in your bank
+```
+
+**Withholding is the one that surprises people.** A customer who is a
+withholding agent pays you *less than the invoice says*, deliberately — the
+difference goes to the BIR on your behalf and you claim it back as a credit. It
+is not a short payment, and Cargo Rush treats an invoice paid at its **Due**
+figure as fully settled.
+
+Set both on the customer, once, in **Customer Management**:
+
+| Field | What to put in it |
+| --- | --- |
+| **TIN** | Theirs. A VAT invoice without the buyer's TIN gets sent back. |
+| **VAT** | *VAT (12%)* for almost everyone. *Zero-rated* for exporters and PEZA locators. *VAT-exempt* where they genuinely are. |
+| **Withholds tax** | *Yes* for government agencies and large corporates. *No* for most small traders. |
+
+Everything raised for that firm afterwards — by hand or by a delivery — picks
+those up. **The rates are frozen onto each document as it is issued**, so a
+change in law never rewrites an invoice a customer is already holding.
+
+> Not VAT-registered yourself? An administrator can switch it off for the whole
+> company, and your invoices then carry no VAT line at all.
+
 ### Getting paid
 
-Marking an invoice settled is its own action, not a status you edit. It becomes
-**Paid**, and the system records the date the money arrived — pressing it twice
-does not move that date.
+**Record the payment, not the status.** Payments are their own records now:
+each has the day the money moved, the method, and — the useful one — the
+**reference** off the cheque or transfer, which is what you match a bank
+statement against.
+
+That makes two things possible that were not before:
+
+- **Part payments.** ₱50,000 against a ₱120,000 invoice leaves it **Partial**
+  with ₱70,000 still owing, instead of forcing you to call it paid or unpaid.
+- **One payment, several invoices.** A customer settling the month with one
+  transfer is one payment split across the documents it covers — not four
+  fictions typed in separately.
+
+Marking an invoice settled is still one action and still its own verb, not a
+status you edit. It records a payment for **whatever is left** — the due figure
+less anything already received — and the status follows from that. Pressing it
+twice does nothing the second time.
+
+Entered against the wrong customer? Delete the payment and every invoice it was
+holding up goes back to what it was.
+
+### Who owes you, and how late
+
+**Billing & Invoice → Aging** buckets everything outstanding by how far past
+its due date it is — current, 1–30, 31–60, 61–90, over 90 — and lists it worst
+customer first. That is the list a collections call is made from.
+
+Each invoice counts at its **balance**, so a document half paid is half a
+problem rather than a whole one.
 
 *Paid* is a status of its own, and that matters more than it looks. Settling
 used to write *Delivered*, the same word a closed-out haul carries, so nothing
@@ -648,15 +872,31 @@ same trip may read differently on a phone set to another one.
 | --- | --- |
 | "Cannot reach the server" | The system is not running, or the network is down. Not a wrong password — the screen names the address it tried. |
 | The **phone** cannot reach it but the **browser** can | The server is only listening to itself. It has to be started with `--host=0.0.0.0` for a handset on the same Wi-Fi to see it. |
-| Signed out unexpectedly | The session expired. Sign in again — you land back where you were. |
+| Signed out unexpectedly | The session expired. Sign in again — you land back where you were. Or somebody reset the password on that account, which signs out every device. |
+| "Too many attempts" on the sign-in screen | Five wrong passwords for one address in a minute. Wait a minute. This is what stops somebody working through a list of leaked passwords against your accounts. |
+| The reset link says it is no longer valid | It has been used, or it is more than an hour old. Ask for a new one — links are single-use on purpose. |
+| The reset email never arrives | Check spam first. Then check the address: a mistyped one produces the same screen as a correct one, because the system will not say which addresses exist. |
 | A driver sees no trips | Nothing *confirmed* to that driver — an unconfirmed request does not appear in the cab, by design. Or their account is not linked to a driver record. Check both on Trip Management and Drivers Management. |
-| A customer sees nothing at all | Their account is not linked to a company. Recreate it with `php artisan cargo:user --role=customer`, which asks which firm it acts for. |
+| Registering somebody does not ask for a licence, and it should | Their position is not a driving one. A job counts as driving when its default role is **Driver** — set that in **Access Control → Positions**, or pick Driver or Helper from the list instead of typing a custom title. |
+| "That licence is already on employee EMP-00xx's record" | The number is on somebody else's record. Either it is a typo, or that person is already registered under a different name. One licence belongs to one employee. |
+| A driver was registered twice | They were entered once in Drivers Management and again in Employees with a *different* licence number, so the system had no way to tell they were the same person. Retype the licence to match and the two link up. |
+| A customer sees nothing at all | Their account is not linked to a customer record. Recreate it with `php artisan cargo:user --role=customer`, which asks which firm it acts for. |
+| "This account is not attached to a company" | The account exists but its company row was removed. An administrator has to reattach it; nothing the person signing in can fix. |
+| "Southern Freight is suspended" | A billing matter, not a password one. Nothing has been deleted — every trip, invoice and peso comes back untouched on reactivation. |
+| A new member of staff signs in and sees an empty system | Their account was created against the wrong company. Check with `php artisan cargo:user --company=...` — the command names the company in its confirmation line. |
+| Somebody cannot register with their address | It already has an account somewhere on the system. An address belongs to exactly one account, which is what lets signing in skip the company question. They sign in instead. |
 | A customer has no way in | They were added with a phone number and no **Portal login**, so no account was ever made. Edit them, type an address, and the notice above the list gives you the credentials to pass on. |
 | A customer says the password does not work | It is the starting one only until they change it. If they have changed it and forgotten it, `php artisan cargo:user --role=customer` gives that firm a second account with a password you choose. |
 | A request will not start from the phone | It has not been confirmed. Confirm it from Trip Management and the driver's Start button appears. |
 | Proof-of-delivery photos do not load | `php artisan storage:link` has not been run on this install. Run it once; existing deliveries pick up their pictures immediately. |
+| The company logo uploads but shows as a broken image | The same cause: `php artisan storage:link` has not been run. Run it once and it appears. |
+| The logo lost half of itself | It was wider or taller than it was square, and the middle is what is kept. Upload the mark on its own rather than the full lockup with the name beside it. |
 | A delivery earned nothing on the sheet | It had no vehicle assigned, so there is no unit sheet to file against. Assign one before the run goes out. |
 | A delivered run was never invoiced | It has no customer, or its price is zero. Both are legitimate — the company's own freight — so nothing is raised. |
+| The customer paid less than the invoice says | Check whether they are marked **Withholds tax**. If they are, that is correct and the invoice is settled — the difference went to the BIR. If they are not, mark them so, and future invoices will expect the right figure. |
+| An invoice shows more than the rate card quoted | VAT. The quote is the net haul; the invoice adds 12% on top. If your desk quotes all-in prices instead, an administrator can set `TAX_PRICES_INCLUDE_VAT=true` and the VAT is worked out from inside the quoted figure. |
+| Receivables dropped when somebody part-paid | They did not — the total counts what is still owed, not the face value. A ₱120,000 invoice with ₱50,000 received shows ₱70,000. |
+| An old invoice has no VAT on it | It was issued before tax was switched on, and is left exactly as it was. Retroactively adding 12% would make it disagree with the copy the customer has. |
 | A trip is priced lower than it should be | It has no distance. Pin both ends on the map, or type the road distance, and the quote is worked out again — as long as it has not been delivered yet. |
 | The fleet total looks low | Only vehicles entered into the system count. A truck that has not been added is not in the fleet. |
 
@@ -664,6 +904,10 @@ same trip may read differently on a phone set to another one.
 
 ## 11. Before going live
 
+- [ ] **Your company registered**, and its name correct in the sidebar — it is what appears on
+      every screen your people open
+- [ ] Your logo uploaded, and checked at sidebar size (**Access Control → Company**)
+- [ ] The roles renamed and re-ticked to match the office you actually run (**Access Control**)
 - [ ] Every vehicle entered, with today's odometer reading
 - [ ] Every driver **and helper** entered, with licence expiry
 - [ ] Every customer entered

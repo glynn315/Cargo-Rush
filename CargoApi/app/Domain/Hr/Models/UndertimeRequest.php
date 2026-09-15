@@ -6,6 +6,7 @@ namespace App\Domain\Hr\Models;
 
 use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Enums\RequestStatus;
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -16,7 +17,7 @@ use Illuminate\Support\Carbon;
 /** Leaving before the shift is out — a slice of one day, not a day off. */
 class UndertimeRequest extends Model
 {
-    use HasUlids, SoftDeletes;
+    use BelongsToCompany, HasUlids, SoftDeletes;
 
     protected $fillable = [
         'employee_id', 'date', 'from_time', 'to_time', 'hours', 'reason',

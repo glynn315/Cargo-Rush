@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Trip\Resources;
 
+use App\Domain\Inspection\Services\InspectionService;
 use App\Domain\Shared\Http\Resources\ApiResource;
 use App\Domain\Trip\Models\Trip;
 use Illuminate\Http\Request;
@@ -50,6 +51,21 @@ class TripResource extends ApiResource
             'vehicle_id' => $this->vehicle_id,
             'vehicle_plate' => $this->vehicle?->plate,
 
+            /**
+             * Where the unit's pre-trip check stands.
+             *
+             * On every trip payload because all three clients need it and none
+             * of them should be working it out: the handset decides whether
+             * tapping Start opens the checklist or leaves on the run, the office
+             * board can see that a unit was looked over before it rolled, and
+             * the customer can see that somebody checked the truck their load is
+             * on. `InspectionService::summaryFor()` is the one place that
+             * decides what it says.
+             *
+             * Costs no query: the check is eager-loaded with the trip.
+             */
+            'inspection' => app(InspectionService::class)->summaryFor($this->resource, $this->detailedInspection()),
+
             'status' => $this->status->value,
             'pickup_place' => $this->pickup_place,
             'dropoff_place' => $this->dropoff_place,
@@ -63,5 +79,21 @@ class TripResource extends ApiResource
 
             ...$this->stamps(),
         ];
+    }
+
+    /**
+     * May this reader see the itemised check, failures and all?
+     *
+     * Yes here: this resource answers the office and the driver, and both are
+     * looking at their own fleet. `PortalTripResource` overrides it to no — a
+     * customer sees the itemised result only once the unit has passed, because
+     * a held truck is the haulier's own maintenance business and "their brakes
+     * failed" is not a sentence to put in front of a client about a load that
+     * has not moved. What the customer always sees is whether the run has been
+     * cleared, which is the part that concerns them.
+     */
+    protected function detailedInspection(): bool
+    {
+        return true;
     }
 }

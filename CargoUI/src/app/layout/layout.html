@@ -1,6 +1,7 @@
 <a
   href="#cr-main"
-  class="sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-50 focus:rounded-control focus:bg-cr-surface focus:px-4 focus:py-2 focus:text-[14px] focus:font-semibold focus:text-cr-blue">
+  class="sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-50 focus:rounded-control focus:bg-cr-surface focus:px-4 focus:py-2 focus:text-[14px] focus:font-semibold focus:text-cr-blue"
+>
   Skip to content
 </a>
 
@@ -9,7 +10,10 @@
 <div class="flex h-full gap-4 bg-cr-tint p-4">
   <!-- Sidebar: inline at >=1024px, overlay drawer below -->
   @if (!overlay()) {
-    <div class="flex-none transition-[width] duration-200" [style.width.px]="collapsed() ? 72 : 240">
+    <div
+      class="flex-none transition-[width] duration-200"
+      [style.width.px]="collapsed() ? 72 : 240"
+    >
       <app-sidebar [collapsed]="collapsed()" />
     </div>
   } @else if (drawerOpen()) {
@@ -29,7 +33,8 @@
           type="button"
           class="flex h-10 w-10 flex-none items-center justify-center rounded-control text-cr-ink transition-colors hover:bg-cr-surface"
           (click)="toggleDrawer()"
-          aria-label="Open navigation">
+          aria-label="Open navigation"
+        >
           <app-icon name="dashboard" [size]="20" />
         </button>
       }
@@ -43,11 +48,13 @@
             <app-icon
               name="search"
               [size]="16"
-              class="pointer-events-none absolute left-3 text-cr-ink-muted" />
+              class="pointer-events-none absolute left-3 text-cr-ink-muted"
+            />
             <input
               type="search"
               placeholder="Search…"
-              class="h-10 w-56 rounded-control border border-cr-line bg-cr-surface pr-3 pl-9 text-[14px] placeholder:text-cr-ink-muted focus:border-cr-blue focus:outline-none" />
+              class="h-10 w-56 rounded-control border border-cr-line bg-cr-surface pr-3 pl-9 text-[14px] placeholder:text-cr-ink-muted focus:border-cr-blue focus:outline-none"
+            />
           </label>
         }
 
@@ -55,18 +62,21 @@
           type="button"
           class="relative flex h-10 w-10 items-center justify-center rounded-control bg-cr-surface text-cr-ink transition-colors hover:text-cr-blue"
           [attr.aria-label]="unread() ? 'Notifications, ' + unread() + ' unread' : 'Notifications'"
-          routerLink="/notifications">
+          routerLink="/notifications"
+        >
           <app-icon name="bell" [size]="18" />
           @if (unread()) {
             <span
-              class="absolute top-2 right-2 h-2 w-2 rounded-full bg-cr-red ring-2 ring-cr-surface"></span>
+              class="absolute top-2 right-2 h-2 w-2 rounded-full bg-cr-red ring-2 ring-cr-surface"
+            ></span>
           }
         </button>
 
         <button
           type="button"
           class="flex h-10 items-center gap-1.5 rounded-control bg-cr-blue px-4 text-[14px] font-semibold text-cr-surface transition-colors hover:bg-cr-blue-hover"
-          (click)="newTrip()">
+          (click)="newTrip()"
+        >
           <app-icon name="plus" [size]="16" />
           @if (!compact()) {
             <span>New trip</span>
@@ -85,4 +95,8 @@
 <app-trip-form />
 <app-ledger-form />
 <app-record-form />
+<!-- Recording money that has arrived — and the only way an invoice becomes
+     paid. Mounted here like the other dialogs, because both Billing and one
+     invoice's own page open it. -->
+<app-payment-form />
 <app-confirm-host />

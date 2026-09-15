@@ -4,6 +4,9 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 
 import { PermissionGroup, Position, Role } from '../../models/identity/access.model';
 import { AccessService } from '../../services/identity/access.service';
+import { IdentityService } from '../../services/identity/identity.service';
+import { CompanyCard } from './company-card';
+import { YardCard } from './yard-card';
 import { Card } from '../../shared/card';
 import { Confirm } from '../../shared/confirm';
 import { Field } from '../../shared/field';
@@ -27,13 +30,34 @@ import { StatusPill } from '../../shared/status-pill';
 @Component({
   selector: 'app-access',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Card, Field, Icon, Modal, ErrorState, SkeletonRows, StatusPill, ReactiveFormsModule],
+  imports: [
+    Card,
+    CompanyCard,
+    YardCard,
+    Field,
+    Icon,
+    Modal,
+    ErrorState,
+    SkeletonRows,
+    StatusPill,
+    ReactiveFormsModule,
+  ],
   templateUrl: './access.page.html',
 })
 export class AccessPage {
   private readonly accessApi = inject(AccessService);
   private readonly confirm = inject(Confirm);
   private readonly fb = inject(FormBuilder);
+  private readonly identity = inject(IdentityService);
+
+  /**
+   * Whether to show the company card at all.
+   *
+   * The endpoints behind it are gated on `company.manage` regardless — this
+   * only decides whether somebody is shown a control that would 403. A general
+   * manager holds it; an HR officer who can read the roles does not.
+   */
+  protected readonly canManageCompany = signal(this.identity.has('company.manage'));
 
   protected readonly inputClass =
     'h-10 w-full rounded-control border border-cr-line bg-cr-surface px-3 text-[14px] text-cr-ink placeholder:text-cr-ink-muted focus:border-cr-blue focus:outline-none';

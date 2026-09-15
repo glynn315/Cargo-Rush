@@ -31,7 +31,30 @@ class InvoiceRequest extends ApiFormRequest
             'amount_cents' => [$required, 'integer', 'min:0'],
             'currency' => ['sometimes', 'string', 'size:3'],
             'direction' => [$required, Rule::in(InvoiceDirection::values())],
-            'status' => ['sometimes', Rule::in(StatusValue::values())],
+            /**
+             * Where a document stands — but not whether it has been paid.
+             *
+             * `paid` and `partial` are **derived from the payments** against an
+             * invoice (`Invoice::statusFromPayments()`), and a form that could
+             * write them directly produces the one state this codebase says it
+             * refuses to keep: a receivable marked paid with nothing underneath
+             * it. That is not a cosmetic problem. The customer portal reads
+             * these figures as "what have I paid", so a status set by hand told
+             * one firm ₱21,482 had been collected when the bank had seen none of
+             * it, and told the office nothing was owed.
+             *
+             * Settling is `POST billing/{invoice}/settle`, or a payment
+             * recorded against the document — both of which leave the money
+             * behind them.
+             */
+            'status' => [
+                'sometimes',
+                Rule::in([
+                    StatusValue::Pending->value,
+                    StatusValue::Overdue->value,
+                    StatusValue::Cancelled->value,
+                ]),
+            ],
         ];
     }
 
@@ -41,6 +64,8 @@ class InvoiceRequest extends ApiFormRequest
             'customer_id.required_if' => 'A receivable has to name the customer being billed.',
             'payee.required_if' => 'A payable has to name who is being paid.',
             'due_at.after_or_equal' => 'An invoice cannot fall due before it was issued.',
+            'status.in' => 'Paid and part-paid follow from the payments against a document. '
+                .'Settle it, or record the payment, and the status follows.',
         ];
     }
 

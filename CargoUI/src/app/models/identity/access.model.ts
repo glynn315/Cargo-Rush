@@ -62,6 +62,14 @@ export interface Position extends Timestamped {
   default_role_id: string | null;
   default_role_key: string | null;
   default_role_name: string | null;
+  /**
+   * Whether registering somebody into this job also asks for a licence.
+   *
+   * Sent by the API rather than worked out here from `default_role_key`, so
+   * the rule lives in one place — beside the validation that enforces it. The
+   * employee form reads this to decide whether to show the driver details.
+   */
+  drives: boolean;
   position: number;
   status: StatusValue;
   employee_count?: number;

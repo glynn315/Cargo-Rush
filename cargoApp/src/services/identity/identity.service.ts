@@ -1,4 +1,9 @@
-import { Credentials, Me, NavItem } from '@/models/identity/identity.model';
+import {
+  Credentials,
+  Me,
+  NavItem,
+  ShipperRegistration,
+} from '@/models/identity/identity.model';
 
 import { api } from '../shared/api.service';
 
@@ -31,13 +36,41 @@ export const identityService = {
     return response.data;
   },
 
+  /**
+   * Sign a customer up. No carrier: they pick one per load.
+   *
+   * Answers in exactly the shape a login does, token and all, because
+   * registering *is* signing in — so the app carries on into the portal down
+   * the same code path rather than a second one written only for this. The
+   * company fields come back null, because there is no haulier yet.
+   */
+  async registerCustomer(registration: ShipperRegistration): Promise<Me> {
+    const response = await api.postEnvelope<Me>('register/customer', registration);
+
+    api.setToken(String(response.meta?.['token'] ?? ''));
+
+    return response.data;
+  },
+
   async logout(): Promise<void> {
     await api.post<void>('logout', {});
     api.setToken(null);
   },
 
-  /** The availability switch on the dashboard. */
-  setAvailability(driverId: string, available: boolean): Promise<unknown> {
-    return api.post(`drivers/${driverId}/availability`, { available });
+  /**
+   * The availability switch on the dashboard.
+   *
+   * No driver id, and that is the fix rather than a tidy-up. This used to post
+   * to `drivers/{id}/availability`, which is the office's route behind
+   * `drivers.manage` — the permission that edits the roster, and one no driver
+   * holds. Every driver who touched their own switch got back "This account
+   * does not hold drivers.manage."
+   *
+   * `drivers/me/availability` is the driver's own: it resolves the record from
+   * the token, like every other call the handset makes about its own work, and
+   * can reach no other row.
+   */
+  setAvailability(available: boolean): Promise<unknown> {
+    return api.post('drivers/me/availability', { available });
   },
 };

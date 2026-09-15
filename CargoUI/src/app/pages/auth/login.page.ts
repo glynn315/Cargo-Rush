@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
 import { environment } from '../../../environments/environment';
 import { IdentityService } from '../../services/identity/identity.service';
@@ -18,7 +18,7 @@ import { Wordmark } from '../../shared/wordmark';
 @Component({
   selector: 'app-login',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, Field, Wordmark],
+  imports: [ReactiveFormsModule, RouterLink, Field, Wordmark],
   templateUrl: './login.page.html',
 })
 export class LoginPage {
@@ -71,6 +71,13 @@ export class LoginPage {
 
     if (error.status === 419) {
       return 'The session token was rejected. Reload the page and try again.';
+    }
+
+    // Five attempts a minute on the address being tried. Somebody who has
+    // mistyped their password three times needs to be told to wait, not told
+    // the number 429.
+    if (error.status === 429) {
+      return 'Too many sign-in attempts. Wait a minute and try again.';
     }
 
     if (error.status >= 500) {

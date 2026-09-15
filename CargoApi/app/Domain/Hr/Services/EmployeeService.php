@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Domain\Hr\Services;
 
+use App\Domain\Driver\Models\Driver;
 use App\Domain\Hr\DTO\EmployeeData;
+use App\Domain\Hr\DTO\LicenceData;
 use App\Domain\Hr\Models\Employee;
 use App\Domain\Hr\Repositories\EmployeeRepository;
 use App\Domain\Identity\Models\Position;
+use App\Domain\Shared\Enums\StatusValue;
 use App\Domain\Shared\Repositories\Repository;
 use App\Domain\Shared\Services\CrudService;
 use Illuminate\Http\UploadedFile;
@@ -18,6 +21,11 @@ use Illuminate\Http\UploadedFile;
  * Registration is the one verb here that is not plain CRUD, because it has a
  * photograph attached and a payroll number to allocate — and the number has to
  * come from the same place every time or two people end up sharing one.
+ *
+ * It also decides whether the person needs a `drivers` row, which is the second
+ * thing that stops this being CRUD. The office no longer picks one from a list;
+ * they type a licence, and `linkDriverRecord()` works out whether that means an
+ * existing record or a new one.
  */
 class EmployeeService extends CrudService
 {
@@ -32,13 +40,13 @@ class EmployeeService extends CrudService
     }
 
     /**
-     * Register somebody, with their photograph.
+     * Register somebody, with their photograph and — if they drive — a licence.
      *
      * The employee number is allocated here when the caller offered none, so
      * the office never has to know the numbering scheme — and cannot collide
      * with a number already on a payslip.
      */
-    public function register(EmployeeData $data, ?UploadedFile $photo): Employee
+    public function register(EmployeeData $data, ?UploadedFile $photo, ?LicenceData $licence = null): Employee
     {
         $attributes = $data->persistable();
 
@@ -49,7 +57,11 @@ class EmployeeService extends CrudService
         $attributes['photo_path'] = $this->photos->store($photo, 'employees');
         $attributes = $this->withPositionLabel($attributes);
 
-        return Employee::create($attributes)->refresh();
+        $employee = Employee::create($attributes)->refresh();
+
+        $this->linkDriverRecord($employee, $licence);
+
+        return $employee->refresh();
     }
 
     /**
@@ -86,8 +98,12 @@ class EmployeeService extends CrudService
      * follow. Reading a missing file as "remove the photograph" would clear it
      * on every form submission that did not re-upload one.
      */
-    public function edit(Employee $employee, EmployeeData $data, ?UploadedFile $photo): Employee
-    {
+    public function edit(
+        Employee $employee,
+        EmployeeData $data,
+        ?UploadedFile $photo,
+        ?LicenceData $licence = null,
+    ): Employee {
         $attributes = $data->persistable();
 
         if ($photo !== null) {
@@ -103,7 +119,83 @@ class EmployeeService extends CrudService
             $employee->user->forceFill(['name' => $employee->fresh()->fullName()])->save();
         }
 
+        // After the update, so moving somebody *into* a driving job opens their
+        // driver record in the same save rather than needing a second edit.
+        $this->linkDriverRecord($employee->refresh(), $licence);
+
         return $employee->refresh();
+    }
+
+    /**
+     * Give a driving employee their `drivers` row, or find the one they have.
+     *
+     * This is what replaced the **Driver record** dropdown, and the reason it
+     * can is that a licence number identifies a driver better than a name in a
+     * list does. Three cases, and the middle one is why matching beats picking:
+     *
+     *   **Already linked** — the row is theirs; the licence details are written
+     *   through to it, because a renewal is exactly what somebody is doing when
+     *   they edit a driver's expiry date on the roster.
+     *
+     *   **A record exists under that licence** — the fleet knew this driver
+     *   before HR did, which is the normal order in a business that was running
+     *   before it had an HR module. They are linked, and the operational record
+     *   is left standing: every trip, dispatch and GPS ping in the system points
+     *   at it, and the whole point of `employees` is to describe that person,
+     *   not to replace their history.
+     *
+     *   **Nobody on file** — a new hire. The row is opened here so registering
+     *   a driver is one form rather than two screens in a particular order.
+     *
+     * Nothing happens for a job that does not drive, and nothing happens when
+     * the submission carried no licence — an edit that corrects a phone number
+     * must leave the driver record exactly as it was.
+     *
+     * **A driver moved off the road keeps their record.** There is no branch
+     * here that unlinks or deletes one, and there should not be: the history
+     * belongs to the person, and taking it away because their job title changed
+     * would quietly rewrite who drove which trip.
+     */
+    private function linkDriverRecord(Employee $employee, ?LicenceData $licence): void
+    {
+        if ($licence === null || ! $licence->hasLicence()) {
+            return;
+        }
+
+        // The job decides, not the caller. A licence sent for an office role is
+        // ignored rather than obeyed — otherwise a stray field on a payload
+        // would put the bookkeeper on the driver roster.
+        if ($employee->jobPosition?->drives() !== true) {
+            return;
+        }
+
+        $details = array_filter([
+            'licence_no' => $licence->licence_no,
+            'licence_expiry' => $licence->licence_expiry,
+        ], static fn (?string $value): bool => $value !== null && $value !== '');
+
+        if ($employee->driver !== null) {
+            $employee->driver->update($details);
+
+            return;
+        }
+
+        $existing = Driver::query()->where('licence_no', $licence->licence_no)->first();
+
+        $driver = $existing ?? Driver::create([
+            ...$details,
+            'name' => $employee->fullName(),
+            // Available, because somebody just hired is somebody who can be
+            // given a run. `Driver::create` would default this anyway; saying
+            // it here is what makes that a decision rather than an accident.
+            'status' => StatusValue::Available->value,
+        ]);
+
+        if ($existing !== null) {
+            $existing->update($details);
+        }
+
+        $employee->update(['driver_id' => $driver->id]);
     }
 
     /**

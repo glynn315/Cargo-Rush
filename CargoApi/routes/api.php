@@ -2,9 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Domain\Accounting\Controllers\AccountController;
+use App\Domain\Accounting\Controllers\GeneralLedgerController;
+use App\Domain\Accounting\Controllers\JournalController;
+use App\Domain\Accounting\Controllers\StatementController;
 use App\Domain\Billing\Controllers\BillingController;
+use App\Domain\Billing\Controllers\PaymentController;
 use App\Domain\Customer\Controllers\CustomerController;
 use App\Domain\Customer\Controllers\PortalController;
+use App\Domain\Customer\Controllers\ShipperRegistrationController;
 use App\Domain\Dashboard\Controllers\DashboardController;
 use App\Domain\Delivery\Controllers\DeliveryController;
 use App\Domain\Dispatch\Controllers\DispatchController;
@@ -21,10 +27,16 @@ use App\Domain\Identity\Controllers\AccessController;
 use App\Domain\Identity\Controllers\AuthController;
 use App\Domain\Identity\Controllers\MeController;
 use App\Domain\Identity\Controllers\NavigationController;
+use App\Domain\Identity\Controllers\PasswordController;
+use App\Domain\Incident\Controllers\DriverIncidentController;
 use App\Domain\Incident\Controllers\IncidentController;
 use App\Domain\Inspection\Controllers\InspectionController;
 use App\Domain\Notification\Controllers\NotificationController;
+use App\Domain\Payroll\Controllers\PayrollController;
 use App\Domain\Pricing\Controllers\PricingController;
+use App\Domain\Tenancy\Controllers\CarrierController;
+use App\Domain\Tenancy\Controllers\CompanyController;
+use App\Domain\Tenancy\Controllers\RegistrationController;
 use App\Domain\Trip\Controllers\DriverTripController;
 use App\Domain\Trip\Controllers\TripController;
 use App\Domain\Vehicle\Controllers\VehicleController;
@@ -46,13 +58,105 @@ Route::prefix('v1')->group(function (): void {
 
     /* ------------------------------------------------------------- Public */
 
-    Route::post('login', [AuthController::class, 'login'])->name('login');
+    // Registering a company is the only public write there is. It creates the
+    // firm and the first account together and answers signed in, in the same
+    // shape login does — so a client carries on into the app through one code
+    // path rather than two.
+    //
+    // Throttled per IP per hour: a successful call here costs the platform a
+    // company, a set of roles and a permanent row, so it is the one endpoint
+    // where the *successes* are worth metering as well as the failures.
+    Route::post('register', RegistrationController::class)->middleware('throttle:register');
+
+    /**
+     * A shipper signing themselves up.
+     *
+     * The second way a customer account comes to exist, and the two mean
+     * different things. An office adding a firm in Customer Management creates
+     * a login that belongs to that haulier — it books with them, reads their
+     * invoices, and is shown no other carrier. This creates a login that
+     * arrived at the *platform* and belongs to nobody: it picks a haulier per
+     * load, on the request form, and may pick a different one next week.
+     *
+     * A name, a number and a login is all it takes. No carrier and no address,
+     * because both are answered per load by whoever is standing next to it —
+     * see `RegisterShipperRequest`.
+     *
+     * On the same limiter as a company registration: it writes a login on an
+     * unauthenticated call, so the successes are worth metering too.
+     */
+    Route::post('register/customer', ShipperRegistrationController::class)
+        ->middleware('throttle:register');
+
+    /**
+     * Who is hauling near here — the only public read there is.
+     *
+     * Not part of signing up any more, and still public for the reason it
+     * always was: a directory behind a login would mean asking a firm to
+     * register with a platform before showing them whether anybody on it serves
+     * their town. What it exposes is what a haulier paints on the side of a
+     * truck — see `CarrierController`. A shipper who has an account reads
+     * `portal/carriers` instead, which is this list plus which of them they
+     * already deal with.
+     */
+    Route::get('carriers', CarrierController::class)->middleware('throttle:carriers');
+
+    // Throttled on the address being tried *and* the caller's IP — see the
+    // `login` limiter for why neither works on its own.
+    Route::post('login', [AuthController::class, 'login'])
+        ->middleware('throttle:login')
+        ->name('login');
+
+    /**
+     * Getting back in.
+     *
+     * Public, necessarily: somebody who cannot sign in cannot authenticate to
+     * ask for help. Both are metered on the `login` limiter — the same budget
+     * as a sign-in attempt, because they are the same thing being abused. An
+     * unmetered `forgot-password` is a way to send somebody a hundred emails.
+     *
+     * Neither knows or needs a company. `password_reset_tokens` is keyed by
+     * address, and an address belongs to exactly one account system-wide, so
+     * the token identifies the account and the account names the company.
+     */
+    Route::post('forgot-password', [PasswordController::class, 'forgot'])
+        ->middleware('throttle:login');
+
+    Route::post('reset-password', [PasswordController::class, 'reset'])
+        ->middleware('throttle:login');
+
+    /* -------------------------------------------- Signed in, no company */
+
+    // The only authenticated endpoint outside the company group below. Signing
+    // out touches no company data, and somebody whose firm has just been
+    // suspended must still be able to get out of the app — requiring an active
+    // company in order to leave one would strand them on a screen they can
+    // neither use nor close.
+    Route::post('logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
+
+    // Changing your own password. Outside the company group for the same
+    // reason logout is: it touches the account, not the company's data, and
+    // somebody whose firm is suspended should still be able to secure their
+    // own login.
+    Route::post('me/password', [PasswordController::class, 'change'])->middleware('auth:sanctum');
 
     /* ---------------------------------------------------- Authenticated */
 
-    Route::middleware('auth:sanctum')->group(function (): void {
-
-        Route::post('logout', [AuthController::class, 'logout']);
+    /**
+     * Three, in this order, and the order is the security property.
+     *
+     * `auth:sanctum` establishes *who*. `tenant` establishes *whose data* — the
+     * caller's company, off the account and from nowhere else, in force before
+     * any controller here runs so every query underneath is filtered to it.
+     *
+     * `bindings` is last because it *is* a query. Route model binding turns
+     * `{vehicle}` into a row, and a row fetched before the company is in force
+     * is fetched from every company on the platform — `VehicleController::show()`
+     * would then return whatever the id named. It is a route middleware rather
+     * than the group middleware Laravel ships with precisely so it can be put
+     * after the other two; see `bootstrap/app.php`.
+     */
+    Route::middleware(['auth:sanctum', 'tenant', 'bindings'])->group(function (): void {
 
         // The two endpoints that make the shell data-driven (section 7.2, 7.3).
         Route::get('me', MeController::class);
@@ -142,6 +246,21 @@ Route::prefix('v1')->group(function (): void {
             Route::post('vehicles/{vehicle}/status', [VehicleController::class, 'status']);
         });
 
+        /**
+         * The driver's own availability switch.
+         *
+         * Declared before `drivers/{driver}` so `me` is never read as an id,
+         * the same way `trips/current` is declared before `trips/{trip}`.
+         *
+         * Outside both permission groups on purpose. `drivers.view` and
+         * `drivers.manage` are the office's roster permissions and no driver
+         * holds either, so the switch on the handset's dashboard answered 403
+         * for the one person it belongs to. It needs no permission of its own:
+         * the only row it can reach is the caller's, and an account with no
+         * driver record gets a 404.
+         */
+        Route::post('drivers/me/availability', [DriverController::class, 'ownAvailability']);
+
         Route::middleware('permission:drivers.view')->group(function (): void {
             Route::get('drivers', [DriverController::class, 'index']);
             Route::get('drivers/{driver}', [DriverController::class, 'show']);
@@ -183,6 +302,122 @@ Route::prefix('v1')->group(function (): void {
             // Sales has its own permission: it is the one finance figure a
             // manager is routinely given without the ledger underneath it.
             Route::get('sales', [FinanceController::class, 'sales'])->middleware('permission:sales.view');
+        });
+
+        /* --------------------------------------------------------- Payroll */
+
+        /**
+         * Pay runs, and the four things you can do to one.
+         *
+         * Two permissions, and the line between them is money: reading a
+         * payslip is `payroll.view` — HR answers for the roster and the
+         * salaries on it — while building, approving and paying is
+         * `payroll.manage`, because approving freezes what people are handed
+         * and paying posts the entry to the books.
+         *
+         * Every write is a verb rather than a status PATCH, for the reason the
+         * journal's are: approving tells the office, and paying writes a
+         * journal entry. Neither is a field somebody sets.
+         */
+        Route::prefix('payroll')->group(function (): void {
+            Route::middleware('permission:payroll.view')->group(function (): void {
+                Route::get('/', [PayrollController::class, 'index']);
+                /**
+                 * The legal pay periods in a month — the 1st to the 15th and
+                 * the 16th to the end of it.
+                 *
+                 * Before `{run}`, so `periods` is never read as a run id. Same
+                 * ordering rule as `billing/statement`.
+                 */
+                Route::get('periods', [PayrollController::class, 'periods']);
+                Route::get('{run}', [PayrollController::class, 'show']);
+            });
+
+            Route::middleware('permission:payroll.manage')->group(function (): void {
+                Route::post('/', [PayrollController::class, 'store']);
+                // Not a PUT: rebuilding throws the lines away and works them
+                // out again from the employee records as they now stand.
+                Route::post('{run}/rebuild', [PayrollController::class, 'rebuild']);
+                Route::match(['put', 'patch'], '{run}/lines/{line}', [PayrollController::class, 'adjust']);
+                Route::post('{run}/approve', [PayrollController::class, 'approve']);
+                Route::post('{run}/pay', [PayrollController::class, 'pay']);
+                Route::delete('{run}', [PayrollController::class, 'destroy']);
+            });
+        });
+
+        /* ------------------------------------------------------ Accounting */
+
+        /**
+         * The books proper: a chart of accounts, the general journal, and the
+         * general ledger read off it.
+         *
+         * Its own pair of permissions rather than `finance.*`, and the line is
+         * a real one. `finance.view` is the workbook — trip monitoring,
+         * profitability, the quarterly summary — which a fleet manager reads
+         * every day. The journal is the accountant's: posting to it decides
+         * what every statement afterwards says, and voiding an entry is a
+         * correction to the record itself. Plenty of people need the first and
+         * should not have the second.
+         *
+         * Every static path is declared before the one that takes an id, so
+         * `categories`, `types` and `trial-balance` are never read as one.
+         */
+        Route::prefix('accounting')->group(function (): void {
+            Route::middleware('permission:accounting.view')->group(function (): void {
+                // The chart. Not paginated — a chart is read whole.
+                Route::get('accounts/types', [AccountController::class, 'types']);
+                Route::get('accounts', [AccountController::class, 'index']);
+
+                // The journal.
+                Route::get('journal/categories', [JournalController::class, 'categories']);
+                Route::get('journal', [JournalController::class, 'index']);
+
+                /**
+                 * The statements the books exist to produce.
+                 *
+                 * An income statement is a *period* and takes a range; a
+                 * balance sheet is a *moment* and takes one date. Read-only,
+                 * like the ledger — the way to change a figure on a statement
+                 * is to write a journal entry.
+                 */
+                Route::get('statements/income', [StatementController::class, 'income']);
+                Route::get('statements/balance-sheet', [StatementController::class, 'balanceSheet']);
+
+                /**
+                 * The general ledger. Read-only, all of it: nothing is ever
+                 * written to a ledger, it *is* the journal sorted by account,
+                 * and the way to change a figure on it is a journal entry.
+                 */
+                Route::get('ledger/trial-balance', [GeneralLedgerController::class, 'trialBalance']);
+                Route::get('ledger/accounts/{account}', [GeneralLedgerController::class, 'show']);
+                Route::get('ledger', [GeneralLedgerController::class, 'index']);
+
+                // Last of the reads, so nothing above it is taken for an id.
+                Route::get('accounts/{account}', [AccountController::class, 'show']);
+                Route::get('journal/{entry}', [JournalController::class, 'show']);
+            });
+
+            Route::middleware('permission:accounting.manage')->group(function (): void {
+                Route::post('accounts', [AccountController::class, 'store']);
+                Route::match(['put', 'patch'], 'accounts/{account}', [AccountController::class, 'update']);
+                Route::delete('accounts/{account}', [AccountController::class, 'destroy']);
+
+                Route::post('journal', [JournalController::class, 'store']);
+                Route::match(['put', 'patch'], 'journal/{entry}', [JournalController::class, 'update']);
+                Route::delete('journal/{entry}', [JournalController::class, 'destroy']);
+
+                /**
+                 * Both verbs rather than status PATCHes.
+                 *
+                 * Posting stamps who did it and when, checks the entry
+                 * balances first, and tells the office. Voiding takes a reason
+                 * with it and leaves the row where it is. A status field that
+                 * did any of that when set to one particular value would hide
+                 * all of it.
+                 */
+                Route::post('journal/{entry}/post', [JournalController::class, 'post']);
+                Route::post('journal/{entry}/void', [JournalController::class, 'void']);
+            });
         });
 
         // Other Expenses. The category routes and the report are declared
@@ -266,8 +501,33 @@ Route::prefix('v1')->group(function (): void {
         Route::prefix('portal')->middleware('permission:portal.view')->group(function (): void {
             Route::get('summary', [PortalController::class, 'summary']);
             Route::get('invoices', [PortalController::class, 'invoices']);
+
+            /**
+             * Who could pick this up — the screen a request now starts on.
+             *
+             * The one read a customer makes that is about the platform rather
+             * than about one company's books: the active, pinned hauliers near
+             * the load, nearest first, plus whichever they already deal with.
+             * `CarrierDirectory` is the whole of what it can see, and that is a
+             * name, a yard, a phone number and how many units are free.
+             *
+             * Before `requests/{trip}`, so "carriers" is never read as a trip
+             * id.
+             */
+            Route::get('carriers', [PortalController::class, 'carriers']);
+
             Route::get('requests', [PortalController::class, 'index']);
-            Route::get('requests/{trip}', [PortalController::class, 'show']);
+            /**
+             * Deliberately `{tripId}` and not `{trip}`.
+             *
+             * `trip` is bound to the model platform-wide (`DomainServiceProvider`),
+             * and a bound trip resolves under the *caller's* company — which
+             * would 404 a delivery the customer can plainly see on their own
+             * list, because another carrier is hauling it. The name is what
+             * turns the binding off, so the id arrives as a string and
+             * `PortalService` asks each of the customer's carriers in turn.
+             */
+            Route::get('requests/{tripId}', [PortalController::class, 'show']);
 
             // Booking is its own permission: a firm can be given read-only
             // access to its own account without being able to raise work.
@@ -275,10 +535,35 @@ Route::prefix('v1')->group(function (): void {
                 ->middleware('permission:portal.request');
         });
 
+        // `totals` and `aging` before the resource, so neither is read as an
+        // invoice id.
         Route::middleware('permission:billing.view')->group(function (): void {
             Route::get('billing/totals', [BillingController::class, 'totals']);
+            // What is outstanding, by how late it is. The report a collections
+            // call is made from.
+            Route::get('billing/aging', [BillingController::class, 'aging']);
+            /**
+             * The list as a spreadsheet, honouring the same filters as the
+             * list itself — before `billing/{invoice}` so `export` is never
+             * read as an invoice id.
+             */
+            Route::get('billing/export', [BillingController::class, 'export']);
             Route::get('billing', [BillingController::class, 'index']);
+            /**
+             * One firm's running account — the collections document.
+             *
+             * Before `billing/{invoice}` so `statement` is never read as an
+             * invoice id, and it takes a *customer* rather than an invoice:
+             * a statement is about the account, not about one document on it.
+             */
+            Route::get('billing/statement/{customer}', [BillingController::class, 'statement']);
             Route::get('billing/{invoice}', [BillingController::class, 'show']);
+            /**
+             * The invoice as a document: the issuer, both TINs, the haul, the
+             * tax lines, the amount in words and every payment against it.
+             * `billing.view`, because printing an invoice does not change it.
+             */
+            Route::get('billing/{invoice}/document', [BillingController::class, 'document']);
         });
 
         Route::middleware('permission:billing.manage')->group(function (): void {
@@ -286,6 +571,43 @@ Route::prefix('v1')->group(function (): void {
             Route::match(['put', 'patch'], 'billing/{invoice}', [BillingController::class, 'update']);
             Route::delete('billing/{invoice}', [BillingController::class, 'destroy']);
             Route::post('billing/{invoice}/settle', [BillingController::class, 'settle']);
+        });
+
+        // Payments, as records of their own — a payment has its own date and
+        // reference and may settle several documents, none of which fits on an
+        // invoice. Reading them is `billing.view`; recording one is money
+        // moving, so it needs `billing.manage`.
+        Route::get('payments', [PaymentController::class, 'index'])->middleware('permission:billing.view');
+        Route::get('payments/{payment}', [PaymentController::class, 'show'])->middleware('permission:billing.view');
+
+        Route::middleware('permission:billing.manage')->group(function (): void {
+            Route::post('payments', [PaymentController::class, 'store']);
+            Route::delete('payments/{payment}', [PaymentController::class, 'destroy']);
+        });
+
+        /* ------------------------------------------------- The company */
+
+        // The caller's own company — no id in any path, scoped to the account
+        // exactly as the driver and customer routes are. `company.manage` is
+        // its own permission rather than `access.manage`: changing the logo is
+        // not handing out keys.
+        Route::prefix('company')->middleware('permission:company.manage')->group(function (): void {
+            Route::get('/', [CompanyController::class, 'show']);
+
+            /**
+             * The company's own details, including where its yard is.
+             *
+             * A PATCH rather than a PUT: the only field most firms will ever
+             * touch here is the map pin, which is asked for at registration and
+             * is the one thing a company that signed up before the carrier list
+             * existed has no other way to set. Sending the whole record to move
+             * a pin would invite a client to blank the contact details on the
+             * way past.
+             */
+            Route::match(['put', 'patch'], '/', [CompanyController::class, 'update']);
+
+            Route::post('logo', [CompanyController::class, 'storeLogo']);
+            Route::delete('logo', [CompanyController::class, 'destroyLogo']);
         });
 
         /* -------------------------------------------------- Access control */
@@ -377,6 +699,22 @@ Route::prefix('v1')->group(function (): void {
         });
 
         /* --------------------------------------------------------- Support */
+
+        /**
+         * The driver's own incidents — reported from the road, on `cargoApp`.
+         *
+         * Declared before `incidents/{incident}` so `mine` is never read as an
+         * id. Gated on `incidents.write`, the driver's half of this module:
+         * report what happened on your own run. The log, editing a write-up and
+         * closing one out are the office's and stay below.
+         *
+         * Both are scoped to the caller and carry no ids — see
+         * `DriverIncidentController`.
+         */
+        Route::middleware('permission:incidents.write')->group(function (): void {
+            Route::get('incidents/mine', [DriverIncidentController::class, 'index']);
+            Route::post('incidents/report', [DriverIncidentController::class, 'store']);
+        });
 
         Route::middleware('permission:incidents.view')->group(function (): void {
             Route::get('incidents', [IncidentController::class, 'index']);

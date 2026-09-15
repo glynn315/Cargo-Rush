@@ -8,6 +8,7 @@ use App\Domain\Incident\Models\Incident;
 use App\Domain\Shared\Enums\StatusValue;
 use App\Domain\Shared\Repositories\Repository;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 
 class IncidentRepository extends Repository
@@ -27,6 +28,20 @@ class IncidentRepository extends Repository
     protected function searchable(): array
     {
         return ['reference', 'kind', 'place'];
+    }
+
+    /**
+     * One driver's own write-ups, newest first — the handset's list.
+     *
+     * A method rather than a filter passed to `paginate()`, and the difference
+     * matters: `applyFilters()` knows about `status` and `search` and quietly
+     * ignores anything else, so a `driver_id` handed to it would not narrow the
+     * query at all and every driver would read the whole log. A `where` that
+     * cannot be dropped is the only safe way to express "only yours".
+     */
+    public function paginateForDriver(string $driverId, int $perPage = 20): LengthAwarePaginator
+    {
+        return $this->query()->where('driver_id', $driverId)->paginate($perPage);
     }
 
     /** Anything not yet closed out — the sidebar badge and the KPI tile. */

@@ -8,6 +8,7 @@ import { NotificationService } from '../services/notification/notification.servi
 import { ConfirmHost } from '../shared/confirm';
 import { Icon } from '../shared/icon';
 import { LedgerForm } from '../shared/ledger-form';
+import { PaymentForm } from '../shared/payment-dialog';
 import { RecordForm } from '../shared/record-form';
 import { TripDialog } from '../shared/trip-dialog';
 import { TripForm } from '../shared/trip-form';
@@ -32,6 +33,7 @@ type Breakpoint = 'wide' | 'rail' | 'drawer' | 'mobile';
     TripForm,
     LedgerForm,
     RecordForm,
+    PaymentForm,
     ConfirmHost,
   ],
   templateUrl: './layout.html',

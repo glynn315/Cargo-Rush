@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Fuel\Models;
 
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use Database\Factories\FuelBudgetFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,7 +17,7 @@ use Illuminate\Database\Eloquent\Model;
 class FuelBudget extends Model
 {
     /** @use HasFactory<FuelBudgetFactory> */
-    use HasFactory, HasUlids;
+    use BelongsToCompany, HasFactory, HasUlids;
 
     protected $fillable = ['date', 'daily_budget_cents', 'currency', 'open_requests'];
 

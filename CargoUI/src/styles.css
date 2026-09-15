@@ -189,3 +189,56 @@ app-root {
     animation: none;
   }
 }
+
+/**
+ * Printing.
+ *
+ * Several pages in this app are meant to leave the building on paper — the
+ * invoice document, the financial statements, a statement of account, the
+ * payroll register and a payslip — and taking the shell off is the same job for
+ * all of them, so it lives here rather than being copied into each component.
+ * What is particular to one sheet (which blocks must not break across a page)
+ * stays with that sheet.
+ *
+ * What comes off is the shell: the sidebar, the canvas header with its search
+ * box and bell, and anything a page has marked `cr-no-print` (its own toolbar,
+ * usually). What is left is the document itself, on white, with the printer's
+ * own margins rather than the app's 16px frame.
+ */
+@media print {
+  /* The frame belongs to the app, not to the document. */
+  app-sidebar,
+  #cr-main > header,
+  .cr-no-print {
+    display: none !important;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  /* The canvas is a scrolling pane on screen; on paper it is the sheet, and a
+     fixed height would cut the document off at one page. */
+  #cr-main,
+  #cr-main > div {
+    overflow: visible !important;
+    height: auto !important;
+    padding: 0 !important;
+  }
+
+  body > app-root > div,
+  body > app-root > app-layout > div {
+    display: block !important;
+    padding: 0 !important;
+    gap: 0 !important;
+    height: auto !important;
+    background: #fff !important;
+  }
+
+  /* Print the URL after a link and the page is full of noise nobody asked
+     for. */
+  a[href]::after {
+    content: '' !important;
+  }
+}

@@ -57,15 +57,40 @@ export function invoiceSpec(): RecordSpec<Invoice> {
         placeholder: 'Petron Fleet Card',
         hint: 'Required for a payable.',
       },
-      { key: 'amount', label: 'Amount (₱)', kind: 'money', required: true },
+      /**
+       * The taxable figure, not the document total.
+       *
+       * What the desk has: the net haul, or the all-in price where the rate
+       * card is quoted VAT-inclusive. The API adds the VAT and the withholding
+       * and reports the total back — so this field must never be filled from
+       * `amount_cents`, which already has the VAT in it. It was, and every save
+       * put 12% on top of 12%.
+       */
+      { key: 'amount', label: 'Amount before VAT (₱)', kind: 'money', required: true },
       { key: 'issued_at', label: 'Issued', kind: 'date', required: true },
-      { key: 'due_at', label: 'Due', kind: 'date', required: true, hint: 'Cannot precede the issue date.' },
       {
+        key: 'due_at',
+        label: 'Due',
+        kind: 'date',
+        required: true,
+        hint: 'Cannot precede the issue date.',
+      },
+      {
+        /**
+         * Where the document stands — and `paid` is not on the list.
+         *
+         * Paid and part-paid follow from the payments recorded against an
+         * invoice, so the API refuses them here. Offering the option meant a
+         * document could be flagged settled with nothing behind it, which is
+         * exactly what told one customer ₱21,482 had been collected while the
+         * bank had seen none of it. Settling is its own action, and it leaves
+         * the payment behind it.
+         */
         key: 'status',
         label: 'Status',
         kind: 'select',
-        options: statusOptions(['pending', 'overdue', 'paid', 'cancelled']),
-        hint: 'Paid means the money has arrived.',
+        options: statusOptions(['pending', 'overdue', 'cancelled']),
+        hint: 'Paid follows from a payment — settle it or record one.',
       },
     ],
 
@@ -75,7 +100,10 @@ export function invoiceSpec(): RecordSpec<Invoice> {
       direction: invoice.direction,
       customer_id: invoice.customer_id ?? '',
       payee: invoice.payee ?? '',
-      amount: invoice.amount_cents / 100,
+      // `taxable_base_cents`, not `amount_cents`: the base the tax was worked
+      // out from, so re-saving a document leaves its figures alone. See
+      // `Invoice::taxBaseCents()` on the API.
+      amount: invoice.taxable_base_cents / 100,
       issued_at: invoice.issued_at,
       due_at: invoice.due_at,
       status: invoice.status,

@@ -136,6 +136,20 @@ export const trackingService = {
       // background — which would be a network call per reading and a rate
       // limit breach — the coordinates are the honest answer.
       location: `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`,
+      /**
+       * The position itself, as numbers.
+       *
+       * This used to be sent only as the formatted string above, which meant
+       * the phone knew exactly where the truck was and the server stored a
+       * caption. Nothing could plot a route, filter by area or fence a depot,
+       * because none of that can be asked of a varchar.
+       *
+       * `location` stays beside it rather than being replaced: one is what a
+       * dispatcher reads, the other is what a map draws, and a reverse geocode
+       * would eventually make them genuinely different values.
+       */
+      lat: coords.lat,
+      lng: coords.lng,
       speed_kph: Math.max(0, Math.round((speedMs ?? 0) * 3.6)),
       heading: session.last === null ? 'N' : headingOf(session.last, coords),
       progress_pct: progressPct(coords, session.origin, session.destination) ?? 0,

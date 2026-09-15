@@ -8,6 +8,8 @@ use App\Domain\Driver\Models\Driver;
 use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Enums\Role;
 use App\Domain\Shared\Enums\StatusValue;
+use App\Domain\Tenancy\Models\Company;
+use App\Domain\Tenancy\Support\Tenant;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
@@ -21,6 +23,13 @@ use Illuminate\Support\Facades\Hash;
  * One per role, so each part of the system can be reached and checked from the
  * start. Real staff accounts are added later with `php artisan cargo:user`,
  * which is also how these should eventually be replaced.
+ *
+ * **One company's, not every company's.** These go into the install's first
+ * company — the one the tenancy migration created and backfilled everything
+ * into. Seeding a known address and a shared password into every firm that
+ * registers would be handing each of them an account they never asked for and
+ * a password published in a repository. A company that registers gets exactly
+ * one account: the person who registered it.
  *
  * The password comes from `SEED_PASSWORD` so it can be set per install rather
  * than being a value published in a repository. It is a starting password, not
@@ -39,25 +48,41 @@ class UserSeeder extends Seeder
         ['marco@cargorush.ph', 'Marco Reyes', Role::Driver],
     ];
 
+    public function __construct(private readonly Tenant $tenant) {}
+
     public function run(): void
     {
-        $password = (string) env('SEED_PASSWORD', 'password');
+        $company = Company::query()->oldest()->first();
 
-        foreach (self::ACCOUNTS as [$email, $name, $role]) {
-            $user = User::updateOrCreate(['email' => $email], [
-                'name' => $name,
-                'password' => Hash::make($password),
-                'role' => $role->value,
-            ]);
+        if ($company === null) {
+            $this->command?->warn('No company to seed accounts into. Register one at POST /api/v1/register.');
 
-            if ($role === Role::Driver) {
-                $this->driverFor($user);
-            }
+            return;
         }
 
-        $this->command?->warn(
-            'Seeded accounts use the SEED_PASSWORD value. Change these passwords before going live.'
-        );
+        $password = (string) env('SEED_PASSWORD', 'password');
+
+        // Inside the company, so `company_id` is stamped by the model layer and
+        // the `updateOrCreate` below matches within it rather than across the
+        // platform.
+        $this->tenant->use($company, function () use ($password): void {
+            foreach (self::ACCOUNTS as [$email, $name, $role]) {
+                $user = User::updateOrCreate(['email' => $email], [
+                    'name' => $name,
+                    'password' => Hash::make($password),
+                    'role' => $role->value,
+                ]);
+
+                if ($role === Role::Driver) {
+                    $this->driverFor($user);
+                }
+            }
+        });
+
+        $this->command?->warn(sprintf(
+            'Seeded accounts into %s and use the SEED_PASSWORD value. Change these passwords before going live.',
+            $company->name,
+        ));
     }
 
     /**

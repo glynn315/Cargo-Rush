@@ -10,16 +10,21 @@ use App\Domain\Driver\Models\Driver;
 use App\Domain\Fuel\Models\FuelBudget;
 use App\Domain\Fuel\Models\FuelRecord;
 use App\Domain\Vehicle\Models\Vehicle;
+use Database\Seeders\Concerns\SeedsIntoACompany;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 
 /** Fuel and billing. Every figure is integer centavos. */
 class MoneySeeder extends Seeder
 {
+    use SeedsIntoACompany;
+
     public function run(): void
     {
-        $this->fuel();
-        $this->invoices();
+        $this->intoCompany(function (): void {
+            $this->fuel();
+            $this->invoices();
+        });
     }
 
     private function fuel(): void

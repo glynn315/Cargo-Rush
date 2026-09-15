@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Pricing\Models;
 
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -18,7 +19,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class PricingBracket extends Model
 {
-    use HasUlids;
+    use BelongsToCompany, HasUlids;
 
     protected $fillable = [
         'zone_id', 'label', 'min_km', 'max_km',

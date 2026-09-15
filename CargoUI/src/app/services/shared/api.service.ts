@@ -55,9 +55,7 @@ export class ApiService {
   }
 
   post<T>(path: string, body: unknown): Observable<T> {
-    return this.http
-      .post<Envelope<T>>(this.url(path), body, this.options)
-      .pipe(map((r) => r.data));
+    return this.http.post<Envelope<T>>(this.url(path), body, this.options).pipe(map((r) => r.data));
   }
 
   /**
@@ -77,9 +75,7 @@ export class ApiService {
   }
 
   put<T>(path: string, body: unknown): Observable<T> {
-    return this.http
-      .put<Envelope<T>>(this.url(path), body, this.options)
-      .pipe(map((r) => r.data));
+    return this.http.put<Envelope<T>>(this.url(path), body, this.options).pipe(map((r) => r.data));
   }
 
   /** As `put`, for a caller that needs `meta` as well. */
@@ -97,16 +93,40 @@ export class ApiService {
    * by hand omits it and makes the request unparseable at the other end.
    */
   postForm<T>(path: string, form: FormData): Observable<T> {
-    return this.http
-      .post<Envelope<T>>(this.url(path), form, this.options)
-      .pipe(map((r) => r.data));
+    return this.http.post<Envelope<T>>(this.url(path), form, this.options).pipe(map((r) => r.data));
+  }
+
+  /**
+   * A write whose answer is a 204.
+   *
+   * Its own method for the same reason `delete` has one, and the bug that
+   * earned it is worth recording: `post()` maps `response.data` off the
+   * envelope, and a 204 has **no envelope at all** — `HttpClient` hands back
+   * `null`, reading `.data` on it throws, and the caller gets an error from a
+   * request that in fact succeeded. Signing out was that call: the server
+   * ended the session, the client threw, and the state that says who is signed
+   * in was never cleared.
+   */
+  postVoid(path: string, body: unknown = {}): Observable<void> {
+    return this.http.post<void>(this.url(path), body, this.options).pipe(map(() => undefined));
   }
 
   /** A 204 has no body, so this resolves to void rather than a parsed null. */
   delete(path: string): Observable<void> {
-    return this.http
-      .delete<void>(this.url(path), this.options)
-      .pipe(map(() => undefined));
+    return this.http.delete<void>(this.url(path), this.options).pipe(map(() => undefined));
+  }
+
+  /**
+   * A delete that answers with the record it changed, rather than a 204.
+   *
+   * Removing a company's logo is the case, and the exception proves the rule:
+   * an ordinary destroy removes the row and there is nothing to say about it,
+   * but this one leaves a company standing with one field cleared — and the
+   * shell has to draw that company either way. Returning it saves a second
+   * call to fetch what the first already knew.
+   */
+  deleteItem<T>(path: string): Observable<T> {
+    return this.http.delete<Envelope<T>>(this.url(path), this.options).pipe(map((r) => r.data));
   }
 
   private url(path: string): string {

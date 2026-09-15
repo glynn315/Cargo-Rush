@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-import { ApiError, Envelope, ListQuery } from '@/models/shared/envelope.model';
+import { ApiError, Envelope, QueryParams } from '@/models/shared/envelope.model';
 
 /**
  * The one place a request leaves this app.
@@ -69,14 +69,14 @@ export const api = {
   },
 
   /** The full envelope, for a caller that needs `meta` as well as `data`. */
-  async envelope<T>(path: string, query?: ListQuery): Promise<Envelope<T>> {
+  async envelope<T>(path: string, query?: QueryParams): Promise<Envelope<T>> {
     const response = await fetch(url(path, query), { headers: headers() });
 
     return unwrap<T>(response);
   },
 
   /** Just the payload — what most callers want. */
-  async get<T>(path: string, query?: ListQuery): Promise<T> {
+  async get<T>(path: string, query?: QueryParams): Promise<T> {
     return (await api.envelope<T>(path, query)).data;
   },
 
@@ -135,7 +135,7 @@ function headers(): Record<string, string> {
   };
 }
 
-function url(path: string, query?: ListQuery): string {
+function url(path: string, query?: QueryParams): string {
   const clean = `${BASE}/${path.replace(/^\//, '')}`;
 
   if (!query) return clean;

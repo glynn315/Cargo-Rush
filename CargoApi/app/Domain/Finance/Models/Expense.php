@@ -7,6 +7,7 @@ namespace App\Domain\Finance\Models;
 use App\Domain\Driver\Models\Driver;
 use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Enums\StatusValue;
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use App\Domain\Trip\Models\Trip;
 use App\Domain\Vehicle\Models\Vehicle;
 use Illuminate\Database\Eloquent\Builder;
@@ -26,7 +27,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Expense extends Model
 {
-    use HasUlids, SoftDeletes;
+    use BelongsToCompany, HasUlids, SoftDeletes;
 
     protected $fillable = [
         'category_id', 'truck_id', 'trip_id', 'vehicle_id', 'driver_id',

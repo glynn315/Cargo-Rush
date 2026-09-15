@@ -50,6 +50,8 @@ beforeEach(function (): void {
             ...$overrides,
         ])->json('data.id');
 
+        // A unit does not roll without a passing pre-trip check.
+        $this->passPreTripCheck($id);
         $this->actingAs($this->marco)->postJson("/api/v1/trips/{$id}/start", [])->assertOk();
         $this->actingAs($this->marco)
             ->postJson('/api/v1/trips/current/deliver', ['receiver_name' => 'R. Uy'])
@@ -71,9 +73,15 @@ describe('delivering raises the receivable', function (): void {
             ->and($invoice->customer_id)->toBe($this->customer->id)
             ->and($invoice->direction)->toBe(InvoiceDirection::Receivable)
             ->and($invoice->status)->toBe(StatusValue::Pending)
-            // The customer is invoiced what they were told, not a figure
-            // somebody typed afterwards.
-            ->and($invoice->amount_cents)->toBe($trip->price_cents)
+            /**
+             * The customer is invoiced what they were told, not a figure
+             * somebody typed afterwards — and since tax exists, that promise
+             * is about the **net**. The quote is the haul; VAT is added on top
+             * of it, which is how a rate card is written.
+             */
+            ->and($invoice->net_amount_cents)->toBe($trip->price_cents)
+            ->and($invoice->vat_cents)->toBe(intdiv($trip->price_cents * 12, 100))
+            ->and($invoice->amount_cents)->toBe($invoice->net_amount_cents + $invoice->vat_cents)
             ->and($invoice->number)->toStartWith('INV-');
     });
 
@@ -176,18 +184,33 @@ describe('settling it', function (): void {
 });
 
 describe('the dashboard separates owed from collected', function (): void {
+    /**
+     * What the customer is billed, as against what the haul earned.
+     *
+     * The two stopped being the same number when VAT arrived, and keeping them
+     * apart is the point of these tests. Receivables are the **gross** — VAT
+     * included, because that is what has to arrive in the bank. Income is the
+     * **net**, because VAT is collected on the BIR's behalf and was never the
+     * fleet's money to earn.
+     */
+    function billed(int $priceCents): int
+    {
+        return $priceCents + intdiv($priceCents * 12, 100);
+    }
+
     it('counts an unsettled haul as pending payment', function (): void {
         $id = ($this->haul)();
         $price = Trip::findOrFail($id)->price_cents;
 
         $this->actingAs($this->admin)->getJson('/api/v1/dashboard/receivables')
             ->assertOk()
-            ->assertJsonPath('data.pending_payment_cents', $price)
+            ->assertJsonPath('data.pending_payment_cents', billed($price))
             ->assertJsonPath('data.successful_payment_cents', 0)
             ->assertJsonPath('data.pending_count', 1)
             ->assertJsonPath('data.paid_count', 0)
             // What the fleet earned on the road, which is a different question
-            // from when the cash turns up.
+            // from when the cash turns up — and, now, from what was billed.
+            // VAT is not income.
             ->assertJsonPath('data.income_cents', $price);
     });
 
@@ -202,7 +225,7 @@ describe('the dashboard separates owed from collected', function (): void {
         $this->actingAs($this->admin)->getJson('/api/v1/dashboard/receivables')
             ->assertOk()
             ->assertJsonPath('data.pending_payment_cents', 0)
-            ->assertJsonPath('data.successful_payment_cents', $price)
+            ->assertJsonPath('data.successful_payment_cents', billed($price))
             ->assertJsonPath('data.pending_count', 0)
             ->assertJsonPath('data.paid_count', 1)
             // The haul still earned what it earned. Being paid does not
@@ -223,8 +246,8 @@ describe('the dashboard separates owed from collected', function (): void {
             // Overdue money is still owed. Chasing it is a different job from
             // expecting it, which is why it is reported as well as, not
             // instead of.
-            ->assertJsonPath('data.pending_payment_cents', $price)
-            ->assertJsonPath('data.overdue_cents', $price)
+            ->assertJsonPath('data.pending_payment_cents', billed($price))
+            ->assertJsonPath('data.overdue_cents', billed($price))
             ->assertJsonPath('data.pending_count', 1);
     });
 

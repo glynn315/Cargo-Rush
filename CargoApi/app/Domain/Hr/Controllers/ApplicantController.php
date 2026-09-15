@@ -102,10 +102,24 @@ class ApplicantController extends ApiController
         $overrides = $request->validate([
             'hired_on' => ['sometimes', 'date'],
             'position' => ['sometimes', 'string', 'max:60'],
+            // The managed job title, which is what decides whether the licence
+            // below is wanted — see `Position::drives()`.
+            'position_id' => ['nullable', 'string', 'exists:positions,id'],
             'department' => ['nullable', 'string', 'max:60'],
             'employment_type' => ['sometimes', 'string'],
             'base_salary_cents' => ['sometimes', 'integer', 'min:0'],
-            'driver_id' => ['nullable', 'string', 'exists:drivers,id'],
+            /**
+             * The licence, where the applicant is being hired to drive.
+             *
+             * Optional even then, unlike registering somebody directly. An
+             * application is not a licence check: the desk hires the person
+             * first and the licence turns up with them on day one, and
+             * refusing the hire for want of a number nobody has yet would send
+             * the office to create the employee by hand instead. Left out, the
+             * driver record is opened later by editing the roster.
+             */
+            'licence_no' => ['nullable', 'string', 'max:40'],
+            'licence_expiry' => ['nullable', 'date', 'required_with:licence_no'],
         ]);
 
         $employee = $this->applicants->hire($applicant, $overrides);

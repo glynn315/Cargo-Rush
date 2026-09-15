@@ -7,6 +7,7 @@ namespace Database\Seeders\Demo;
 use App\Domain\Finance\Models\LedgerEntry;
 use App\Domain\Finance\Models\Truck;
 use App\Domain\Vehicle\Models\Vehicle;
+use Database\Seeders\Concerns\SeedsIntoACompany;
 use Illuminate\Database\Seeder;
 
 /**
@@ -23,6 +24,8 @@ use Illuminate\Database\Seeder;
  */
 class LedgerSeeder extends Seeder
 {
+    use SeedsIntoACompany;
+
     private const TRUCKS = [
         ['Truck 1', 'MAR1390'],
         ['Truck 2', 'CBS8862'],
@@ -35,6 +38,11 @@ class LedgerSeeder extends Seeder
     ];
 
     public function run(): void
+    {
+        $this->intoCompany(fn () => $this->seed());
+    }
+
+    private function seed(): void
     {
         $vehicles = Vehicle::query()->pluck('id', 'plate');
 

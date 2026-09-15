@@ -46,6 +46,23 @@ class EmployeeResource extends ApiResource
             // Resolved on read, never stored: moving the install must not
             // orphan every photograph on the roster.
             'photo_url' => app(PhotoStore::class)->url($this->photo_path),
+            /**
+             * Whether this job asks for a licence, and the licence if it does.
+             *
+             * `position_drives` is sent so the form knows which fields to show
+             * when reopening an existing record, without re-deriving the rule
+             * from the position list. It is the same flag `PositionResource`
+             * carries, answered for the job this person actually holds.
+             *
+             * The licence itself is read off the `drivers` row rather than
+             * copied onto `employees`. One number, in one place: a renewal
+             * recorded in Drivers Management shows on the roster without
+             * anything having to keep two columns in step.
+             */
+            'position_drives' => $this->jobPosition?->drives() ?? false,
+            'licence_no' => $this->driver?->licence_no,
+            'licence_expiry' => $this->driver?->licence_expiry?->toDateString(),
+
             'driver_id' => $this->driver_id,
             'driver_name' => $this->driver?->name,
             'user_id' => $this->user_id,

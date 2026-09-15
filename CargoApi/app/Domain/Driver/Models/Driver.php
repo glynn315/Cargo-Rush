@@ -8,6 +8,7 @@ use App\Domain\Fuel\Models\FuelRecord;
 use App\Domain\Identity\Models\User;
 use App\Domain\Incident\Models\Incident;
 use App\Domain\Shared\Enums\StatusValue;
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use App\Domain\Trip\Models\Trip;
 use App\Domain\Vehicle\Models\Vehicle;
 use Database\Factories\DriverFactory;
@@ -26,7 +27,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Driver extends Model
 {
     /** @use HasFactory<DriverFactory> */
-    use HasFactory, HasUlids, SoftDeletes;
+    use BelongsToCompany, HasFactory, HasUlids, SoftDeletes;
 
     protected $fillable = [
         'user_id', 'name', 'licence_no', 'licence_expiry', 'violations',

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Identity\Services;
 
 use App\Domain\Customer\Models\Customer;
+use App\Domain\Customer\Services\ShipperAccounts;
 use App\Domain\Identity\Models\User;
 use App\Domain\Identity\Repositories\UserRepository;
 use App\Domain\Shared\Enums\Role;
@@ -30,7 +31,10 @@ use Illuminate\Support\Facades\Hash;
  */
 class CustomerAccountService
 {
-    public function __construct(private readonly UserRepository $users) {}
+    public function __construct(
+        private readonly UserRepository $users,
+        private readonly ShipperAccounts $accounts,
+    ) {}
 
     /**
      * Make sure this firm can sign in at this address, and say what with.
@@ -79,7 +83,7 @@ class CustomerAccountService
 
         $password = (string) config('cargo.portal.default_password');
 
-        User::create([
+        $user = User::create([
             // The firm's name, because the person is not known yet. Whoever
             // signs in can be renamed later; the account is the firm's.
             'name' => $customer->name,
@@ -88,6 +92,12 @@ class CustomerAccountService
             'role' => Role::Customer->value,
             'customer_id' => $customer->id,
         ]);
+
+        // And the same record as a link, which is what the portal reads. The
+        // column says which account this login *started* on; the link is what
+        // lets it later act for this firm's books at a second haulier without
+        // the first one's row being overwritten.
+        $this->accounts->link($user, $customer);
 
         return ['email' => $address, 'password' => $password];
     }

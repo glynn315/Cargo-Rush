@@ -6,6 +6,7 @@ namespace App\Domain\Incident\Models;
 
 use App\Domain\Driver\Models\Driver;
 use App\Domain\Shared\Enums\StatusValue;
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use App\Domain\Trip\Models\Trip;
 use App\Domain\Vehicle\Models\Vehicle;
 use Database\Factories\IncidentFactory;
@@ -19,7 +20,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Incident extends Model
 {
     /** @use HasFactory<IncidentFactory> */
-    use HasFactory, HasUlids, SoftDeletes;
+    use BelongsToCompany, HasFactory, HasUlids, SoftDeletes;
 
     protected $fillable = [
         'reference', 'kind', 'place', 'occurred_at',

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Trip\Resources;
 
+use App\Domain\Inspection\Services\InspectionService;
 use App\Domain\Shared\Http\Resources\ApiResource;
 use App\Domain\Trip\Models\Trip;
 use Illuminate\Http\Request;
@@ -40,6 +41,17 @@ class CurrentTripResource extends ApiResource
             'status' => $this->status->value,
             'scheduled_at' => $this->iso($this->scheduled_at),
             'eta' => $this->iso($this->eta),
+
+            /**
+             * The check that cleared this unit to leave.
+             *
+             * A run in transit has one by definition — nothing rolls without
+             * it — so on this screen it is the record of the truck being looked
+             * over, with the time and who did it. The handset shows it back so
+             * a driver stopped at a checkpoint has the answer on the phone in
+             * their hand.
+             */
+            'inspection' => app(InspectionService::class)->summaryFor($this->resource),
 
             // The handset needs both ends to work out how far along it is
             // without asking the server on every reading — which, at one

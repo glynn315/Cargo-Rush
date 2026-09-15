@@ -119,10 +119,18 @@
                   {{ employee.has_account ? employee.role_label : 'No login' }}
                 </dd>
               </div>
-              @if (employee.driver_name) {
+              <!--
+                The licence, not the driver record's name.
+
+                It used to print the name off the linked `drivers` row, which
+                is the same name already at the top of this card — so the line
+                said nothing except "yes, linked". The licence is the thing
+                somebody on this screen actually wants: it is what expires.
+              -->
+              @if (employee.licence_no) {
                 <div class="flex justify-between gap-2">
-                  <dt class="text-cr-ink-muted">Driver record</dt>
-                  <dd class="truncate">{{ employee.driver_name }}</dd>
+                  <dt class="text-cr-ink-muted">Licence</dt>
+                  <dd class="cr-num truncate">{{ employee.licence_no }}</dd>
                 </div>
               }
             </dl>

@@ -41,12 +41,30 @@
         </app-field>
       </div>
 
+      <div class="mt-2 text-right">
+        <a routerLink="/forgot-password" class="text-[13px] font-medium text-cr-blue hover:underline">
+          Forgotten your password?
+        </a>
+      </div>
+
       <button
         type="submit"
         class="mt-6 h-10 w-full rounded-control bg-cr-blue text-[14px] font-semibold text-cr-surface transition-colors hover:bg-cr-blue-hover disabled:opacity-60"
         [disabled]="submitting()">
         {{ submitting() ? 'Signing in…' : 'Sign in' }}
       </button>
+
+      <!--
+        No company field, and that is the design rather than an omission: an
+        email address belongs to exactly one account, so signing in with it
+        already says which company to open.
+      -->
+      <p class="mt-4 text-center text-[13px] text-cr-ink-muted">
+        New here?
+        <a routerLink="/register" class="font-medium text-cr-blue hover:underline">
+          Register your company
+        </a>
+      </p>
     </form>
   </div>
 </div>

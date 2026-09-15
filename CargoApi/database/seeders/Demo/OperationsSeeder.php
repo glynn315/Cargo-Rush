@@ -13,6 +13,7 @@ use App\Domain\Gps\Models\GpsPing;
 use App\Domain\Incident\Models\Incident;
 use App\Domain\Trip\Models\Trip;
 use App\Domain\Vehicle\Models\Vehicle;
+use Database\Seeders\Concerns\SeedsIntoACompany;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -26,6 +27,8 @@ use Illuminate\Support\Collection;
  */
 class OperationsSeeder extends Seeder
 {
+    use SeedsIntoACompany;
+
     public function __construct(private readonly PricingService $pricing) {}
 
     /**
@@ -50,6 +53,11 @@ class OperationsSeeder extends Seeder
     ];
 
     public function run(): void
+    {
+        $this->intoCompany(fn () => $this->seed());
+    }
+
+    private function seed(): void
     {
         $drivers = Driver::query()->pluck('id', 'name');
         $vehicles = Vehicle::query()->pluck('id', 'plate');

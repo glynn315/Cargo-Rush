@@ -8,6 +8,7 @@ import { notificationService } from '@/services/notification/notification.servic
 import { tripService } from '@/services/trip/trip.service';
 import { DailyLogSheet } from '@/components/daily-log-sheet';
 import { ProofOfDeliverySheet } from '@/components/proof-of-delivery-sheet';
+import { ReportIncidentSheet } from '@/components/report-incident-sheet';
 import { Screen } from '@/components/screen';
 import { Icon } from '@/components/ui/icon';
 import { Card, EmptyState, ErrorState, SkeletonRows, StatusPill } from '@/components/ui/primitives';
@@ -37,23 +38,41 @@ export function DashboardPage() {
 
   const setAvailability = (next: boolean) => {
     setAvailable(next);
-    if (me.data?.driver_id) {
-      // A failed write reverts the switch — it must not claim a state the
-      // dispatcher cannot see.
-      identityService
-        .setAvailability(me.data.driver_id, next)
-        .catch(() => setAvailable(!next));
-    }
+
+    // No driver id: this is the driver's own switch, and the API resolves the
+    // record from the token. A failed write reverts it — the switch must not
+    // claim a state the dispatcher cannot see.
+    identityService.setAvailability(next).catch(() => setAvailable(!next));
   };
   const [logOpen, setLogOpen] = useState(false);
   const [podOpen, setPodOpen] = useState(false);
+  const [incidentOpen, setIncidentOpen] = useState(false);
 
   // Which run is being started, so its own row can say so rather than the
   // whole list going quiet.
   const [starting, setStarting] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
 
+  /**
+   * Leave on a run — or go and check the truck first.
+   *
+   * A unit does not roll without a passing pre-trip check, and the API refuses
+   * the departure either way. Sending the driver to the checklist is the
+   * difference between an instruction and a complaint: they are standing at the
+   * unit, the check takes seven taps, and the run starts by itself the moment it
+   * passes (see the Inspect screen).
+   *
+   * A unit that was checked and *held* goes to the same place, because the
+   * answer there is the same: the checklist says what failed, and it is the
+   * screen to use again once it is fixed.
+   */
   const startTrip = (t: Trip) => {
+    if (!t.inspection?.passed) {
+      router.push({ pathname: '/inspect', params: { trip: t.id } });
+
+      return;
+    }
+
     setStarting(t.id);
     setStartError(null);
 
@@ -229,6 +248,32 @@ export function DashboardPage() {
         )}
       </Card>
 
+      {/* Report an incident.
+
+          Outside the trip card on purpose, and always here. A unit can break
+          down in the yard on the way to a pickup, so a driver between runs has
+          the same thing to report as one mid-route — a control that appeared
+          only with a current trip would be missing exactly when somebody had
+          nothing else to do but ring the office.
+
+          Quiet rather than red: it belongs to the same row of things a driver
+          might need, and a scarlet button competing with "Mark delivered" would
+          read as the thing to press. The sheet it opens is the urgent one. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Report an incident"
+        onPress={() => setIncidentOpen(true)}
+        style={({ pressed }) => [styles.incidentBtn, pressed && { backgroundColor: Brand.redBg }]}>
+        <Icon name="incident" size={16} color={Brand.red} />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.incidentBtnText}>Report an incident</Text>
+          <Text style={styles.incidentBtnSub}>
+            Breakdown, hold-up, damage — the office is told straight away.
+          </Text>
+        </View>
+        <Icon name="chevron-right" size={16} color={Brand.red} />
+      </Pressable>
+
       <TripList
         heading="Confirmed deliveries"
         icon="shipments"
@@ -265,6 +310,19 @@ export function DashboardPage() {
         vehicleId={trip.data?.vehicle_id ?? null}
         plate={trip.data?.vehicle_plate ?? null}
         defaultRoute={trip.data?.destination ?? null}
+      />
+
+      {/* The run and the last reported position are passed as context, not as
+          fields: the API attaches the trip and the unit itself, and "where" is
+          only prefilled so a driver on a road with no address is not typing one
+          from scratch. Both are null between runs, which the sheet expects. */}
+      <ReportIncidentSheet
+        open={incidentOpen}
+        onClose={() => setIncidentOpen(false)}
+        // The report lands on the office feed, which is this driver's feed too.
+        onReported={notifications.reload}
+        reference={trip.data?.reference ?? null}
+        place={trip.data?.current_location ?? null}
       />
     </Screen>
   );
@@ -307,15 +365,15 @@ function TripList({
         <EmptyState title="Nothing scheduled" body={emptyBody} />
       ) : (
         (state.data ?? []).map((t, i, arr) => (
-          <Pressable
+          // A `View`, not a `Pressable`. The row does nothing when you tap it —
+          // the only thing to do to a trip from here is start it, and that is
+          // its own control below. A `Pressable` with no `onPress` announces a
+          // button to a screen reader that answers to nothing, and on the web
+          // it renders a real `<button>`: the Start button then sits inside it,
+          // which is invalid HTML and a hydration error.
+          <View
             key={t.id}
-            accessibilityRole="button"
-            accessibilityLabel={`${t.reference}, ${t.origin} to ${t.destination}`}
-            style={({ pressed }) => [
-              styles.row,
-              i < arr.length - 1 && styles.rowDivider,
-              pressed && { backgroundColor: Brand.tint },
-            ]}>
+            style={[styles.row, i < arr.length - 1 && styles.rowDivider]}>
             <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
               <Text style={styles.rowTitle}>{t.reference}</Text>
               <Text style={styles.rowSub} numberOfLines={1}>
@@ -328,6 +386,15 @@ function TripList({
             <View style={styles.rowRight}>
               <StatusPill status={t.status} />
 
+              {/* Why the button says Check. Said on the row rather than only in
+                  the sheet it opens, so the queue itself shows which units have
+                  been looked over. */}
+              {onStart && t.status === 'assigned' && !t.inspection?.passed ? (
+                <Text style={styles.checkNote}>
+                  {t.inspection?.inspected_at ? 'held' : 'not checked'}
+                </Text>
+              ) : null}
+
               {/* Only confirmed work can be started. `scheduled` is booked for
                   later and becomes `assigned` on its own once its time comes;
                   `pending` is a request the office has not confirmed yet, and
@@ -337,20 +404,31 @@ function TripList({
               {onStart && t.status === 'assigned' ? (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={`Start ${t.reference}, ${t.origin} to ${t.destination}`}
+                  accessibilityLabel={
+                    t.inspection?.passed
+                      ? `Start ${t.reference}, ${t.origin} to ${t.destination}`
+                      : `Check the unit before starting ${t.reference}`
+                  }
                   disabled={starting !== null}
                   onPress={() => onStart(t)}
                   style={({ pressed }) => [
                     styles.startBtn,
                     (pressed || starting !== null) && { opacity: 0.6 },
                   ]}>
+                  {/* The button says which of the two things it does. A driver
+                      who taps Start and lands on a checklist has been
+                      surprised; one who taps Check knows why. */}
                   <Text style={styles.startBtnText}>
-                    {starting === t.id ? 'Starting…' : 'Start'}
+                    {starting === t.id
+                      ? 'Starting…'
+                      : t.inspection?.passed
+                        ? 'Start'
+                        : 'Check'}
                   </Text>
                 </Pressable>
               ) : null}
             </View>
-          </Pressable>
+          </View>
         ))
       )}
     </Card>
@@ -376,6 +454,23 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Brand.surface,
   },
+
+  checkNote: { fontSize: 11, fontWeight: '600', color: Brand.warning },
+
+  incidentBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two + 2,
+    minHeight: Hit.min,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.three,
+    borderRadius: Radius.card,
+    borderWidth: 1,
+    borderColor: Brand.line,
+    backgroundColor: Brand.surface,
+  },
+  incidentBtnText: { fontSize: 14, fontWeight: '700', color: Brand.red },
+  incidentBtnSub: { marginTop: 2, fontSize: 12, lineHeight: 16, color: Brand.inkMuted },
 
   intro: { gap: 4, paddingHorizontal: Spacing.half },
   greeting: { fontSize: 24, fontWeight: '700', color: Brand.ink, letterSpacing: -0.3 },

@@ -5,10 +5,12 @@ declare(strict_types=1);
 use App\Domain\Driver\Models\Driver;
 use App\Domain\Hr\Models\Applicant;
 use App\Domain\Hr\Models\Employee;
+use App\Domain\Identity\Models\Position;
 use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Enums\Role;
 use Database\Seeders\NavigationSeeder;
 use Database\Seeders\PermissionSeeder;
+use Database\Seeders\PositionSeeder;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -34,9 +36,18 @@ beforeEach(function (): void {
     // have. A fresh install seeds these; a test that issues logins needs them.
     $this->seed(PermissionSeeder::class);
     $this->seed(RoleSeeder::class);
+    // Positions, because whether a hire needs a licence is read off the job
+    // they land in — see `Position::drives()`.
+    $this->seed(PositionSeeder::class);
     $this->seed(NavigationSeeder::class);
 
     $this->admin = User::factory()->create(['role' => Role::Administrator]);
+
+    // The three jobs these tests turn on: one that drives, one that rides
+    // along, and one that never goes near a truck.
+    $this->drivingJob = Position::where('key', 'driver')->firstOrFail();
+    $this->helperJob = Position::where('key', 'helper')->firstOrFail();
+    $this->officeJob = Position::where('key', 'office-staff')->firstOrFail();
 
     $this->form = [
         'first_name' => 'Marco',
@@ -103,33 +114,167 @@ describe('registering an employee', function (): void {
         expect(Employee::findOrFail($id)->photo_path)->toBe($before);
     });
 
-    it('links to a driver record without replacing it', function (): void {
-        $driver = Driver::create([
-            'name' => 'Marco Reyes',
-            'licence_no' => 'N01-23-456789',
-            'licence_expiry' => '2029-01-01',
-        ]);
+    /**
+     * The driver details, separated out.
+     *
+     * The form used to carry a **Driver record** dropdown listing every driver
+     * on file. It asked a mechanic to pick from a fleet of drivers for no
+     * reason, and it asked somebody hiring an actual driver to pick a record
+     * that does not exist yet — so registering a driver meant creating half a
+     * person in Drivers Management first. The licence replaces it: the office
+     * types what they have in their hand, and the system works out whether that
+     * means an existing record or a new one.
+     */
+    describe('the driver details', function (): void {
+        it('asks for no licence when the job does not drive', function (): void {
+            $response = ($this->register)(['position_id' => $this->officeJob->id])->assertCreated();
 
-        $response = ($this->register)(['driver_id' => $driver->id])->assertCreated();
+            expect($response->json('data.position_drives'))->toBeFalse()
+                ->and($response->json('data.driver_id'))->toBeNull()
+                ->and($response->json('data.licence_no'))->toBeNull()
+                ->and(Driver::count())->toBe(0);
+        });
 
-        expect($response->json('data.driver_name'))->toBe('Marco Reyes');
-        // The operational record is untouched: every trip in the system points
-        // at it, and HR arriving must not move that ground.
-        expect($driver->refresh()->exists)->toBeTrue();
-    });
+        it('opens a driver record for a new hire who drives', function (): void {
+            $response = ($this->register)([
+                'position_id' => $this->drivingJob->id,
+                'licence_no' => 'N01-23-456789',
+                'licence_expiry' => '2029-01-01',
+            ])->assertCreated();
 
-    it('refuses to link one driver to two employees', function (): void {
-        $driver = Driver::create([
-            'name' => 'Marco Reyes',
-            'licence_no' => 'N01-23-456789',
-            'licence_expiry' => '2029-01-01',
-        ]);
+            expect($response->json('data.position_drives'))->toBeTrue()
+                ->and($response->json('data.driver_id'))->not->toBeNull()
+                ->and($response->json('data.licence_no'))->toBe('N01-23-456789');
 
-        ($this->register)(['driver_id' => $driver->id])->assertCreated();
+            $driver = Driver::firstOrFail();
 
-        ($this->register)(['first_name' => 'Someone', 'driver_id' => $driver->id])
-            ->assertStatus(422)
-            ->assertJsonValidationErrors('driver_id');
+            expect($driver->name)->toBe('Marco Reyes')
+                ->and($driver->licence_no)->toBe('N01-23-456789')
+                ->and($driver->status->value)->toBe('available');
+        });
+
+        it('refuses to register a driver with no licence', function (): void {
+            ($this->register)(['position_id' => $this->drivingJob->id])
+                ->assertStatus(422)
+                ->assertJsonValidationErrors(['licence_no', 'licence_expiry']);
+
+            expect(Employee::count())->toBe(0);
+        });
+
+        /**
+         * The fleet usually knew the driver before HR did.
+         *
+         * A business running before it had an HR module has every driver in
+         * `drivers` already. Matching on the licence is what lets HR register
+         * that person without creating a second record — and without the office
+         * having to know whether one exists, which is the one thing about this
+         * they had no way to check.
+         */
+        it('links the record that licence already belongs to, rather than opening a second', function (): void {
+            $existing = Driver::create([
+                'name' => 'Marco Reyes',
+                'licence_no' => 'N01-23-456789',
+                'licence_expiry' => '2027-01-01',
+                'trips_completed' => 412,
+            ]);
+
+            $response = ($this->register)([
+                'position_id' => $this->drivingJob->id,
+                'licence_no' => 'N01-23-456789',
+                'licence_expiry' => '2029-01-01',
+            ])->assertCreated();
+
+            expect(Driver::count())->toBe(1)
+                ->and($response->json('data.driver_id'))->toBe($existing->id);
+
+            // The operational record stands: every trip in the system points at
+            // it. Only the expiry moved, because that is the renewal the office
+            // was recording.
+            expect($existing->refresh()->trips_completed)->toBe(412)
+                ->and($existing->licence_expiry->toDateString())->toBe('2029-01-01');
+        });
+
+        it('refuses one licence on two employees', function (): void {
+            ($this->register)([
+                'position_id' => $this->drivingJob->id,
+                'licence_no' => 'N01-23-456789',
+                'licence_expiry' => '2029-01-01',
+            ])->assertCreated();
+
+            ($this->register)([
+                'first_name' => 'Someone',
+                'position_id' => $this->drivingJob->id,
+                'licence_no' => 'N01-23-456789',
+                'licence_expiry' => '2029-01-01',
+            ])
+                ->assertStatus(422)
+                ->assertJsonValidationErrors('licence_no');
+
+            expect(Driver::count())->toBe(1);
+        });
+
+        /**
+         * A helper is a driver record without the keys.
+         *
+         * They ride along, they are named on the trip, and the roster keeps
+         * their licence — which is why `PositionSeeder` gives both jobs the
+         * driver's role, and why reading the requirement off that role covers
+         * both without a second list to maintain.
+         */
+        it('treats a helper as somebody who needs a driver record', function (): void {
+            ($this->register)([
+                'position_id' => $this->helperJob->id,
+                'licence_no' => 'N02-23-456789',
+                'licence_expiry' => '2029-01-01',
+            ])->assertCreated();
+
+            expect(Driver::count())->toBe(1);
+        });
+
+        it('opens the record when somebody is moved into a driving job', function (): void {
+            $id = ($this->register)(['position_id' => $this->officeJob->id])->json('data.id');
+
+            expect(Driver::count())->toBe(0);
+
+            $this->actingAs($this->admin)->patchJson("/api/v1/employees/$id", [
+                'position_id' => $this->drivingJob->id,
+                'licence_no' => 'N03-23-456789',
+                'licence_expiry' => '2029-01-01',
+            ])->assertOk();
+
+            expect(Driver::count())->toBe(1)
+                ->and(Employee::findOrFail($id)->driver_id)->not->toBeNull();
+        });
+
+        it('does not demand the licence again on an edit that changes something else', function (): void {
+            $id = ($this->register)([
+                'position_id' => $this->drivingJob->id,
+                'licence_no' => 'N01-23-456789',
+                'licence_expiry' => '2029-01-01',
+            ])->json('data.id');
+
+            $this->actingAs($this->admin)
+                ->patchJson("/api/v1/employees/$id", ['contact' => '0917 555 9999'])
+                ->assertOk();
+
+            expect(Driver::firstOrFail()->licence_no)->toBe('N01-23-456789');
+        });
+
+        /**
+         * A licence sent for an office job is ignored, not obeyed.
+         *
+         * The position decides, so a stray field on a payload cannot put the
+         * bookkeeper on the driver roster.
+         */
+        it('ignores a licence sent for a job that does not drive', function (): void {
+            ($this->register)([
+                'position_id' => $this->officeJob->id,
+                'licence_no' => 'N09-99-999999',
+                'licence_expiry' => '2029-01-01',
+            ])->assertCreated();
+
+            expect(Driver::count())->toBe(0);
+        });
     });
 
     it('reports headcount and who still has no login', function (): void {

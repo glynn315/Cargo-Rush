@@ -7,6 +7,7 @@ namespace App\Domain\Vehicle\Models;
 use App\Domain\Driver\Models\Driver;
 use App\Domain\Fuel\Models\FuelRecord;
 use App\Domain\Shared\Enums\StatusValue;
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use App\Domain\Trip\Models\Trip;
 use Database\Factories\VehicleFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -19,7 +20,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Vehicle extends Model
 {
     /** @use HasFactory<VehicleFactory> */
-    use HasFactory, HasUlids, SoftDeletes;
+    use BelongsToCompany, HasFactory, HasUlids, SoftDeletes;
 
     protected $fillable = [
         'plate', 'model', 'registration_no', 'capacity_kg', 'status',

@@ -59,7 +59,7 @@ class ExpenseService extends CrudService
             $expense->forceFill(['recorded_by' => $userId])->save();
         }
 
-        return $this->attachToLedger($expense);
+        return $this->attachToLedger($this->dropDriverFromOverhead($expense));
     }
 
     public function updateExpense(Expense $expense, ExpenseData $data): Expense
@@ -70,7 +70,32 @@ class ExpenseService extends CrudService
         // The truck or the date may have moved, which means the day's sheet it
         // belongs to has too. Re-deriving is cheaper than keeping a stale link
         // that puts a Tuesday's fuel on a Monday.
-        return $this->attachToLedger($updated);
+        return $this->attachToLedger($this->dropDriverFromOverhead($updated));
+    }
+
+    /**
+     * Overhead carries no driver.
+     *
+     * The office rent and the annual permits belong to no unit, and therefore
+     * to nobody who drives one. A driver left on a line like that puts a person
+     * against spend they had no part in, and keeps them there in every
+     * per-driver figure built on this table afterwards.
+     *
+     * The clients ask outright whether an expense is a truck's and take the
+     * driver field away when it is not. This is that same rule at the other
+     * end, so a payload that skipped the form cannot file what the form would
+     * not let through — and an expense moved off its truck loses the driver it
+     * was carrying rather than keeping a stale one.
+     */
+    private function dropDriverFromOverhead(Expense $expense): Expense
+    {
+        if ($expense->truck_id !== null || $expense->driver_id === null) {
+            return $expense;
+        }
+
+        $expense->forceFill(['driver_id' => null])->save();
+
+        return $expense;
     }
 
     private function attachToLedger(Expense $expense): Expense

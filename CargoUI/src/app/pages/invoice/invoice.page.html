@@ -1,0 +1,456 @@
+<!--
+  The printable invoice.
+
+  Two audiences on one page. On screen it is a document preview with a couple of
+  actions above it; on paper it is the invoice, and nothing else. The `print:`
+  rules below are what separates them — the toolbar disappears, the shadow and
+  the rounded corners go (a card border printed on paper looks like a mistake),
+  and the sheet gets the margins a printer expects rather than the app's.
+-->
+<style>
+  /*
+    Only what is particular to this sheet. Taking the shell off the page is the
+    same job on any printed page, so it lives in the global stylesheet with the
+    rest of the print rules — see `styles.css`.
+  */
+  @media print {
+    /* On paper the card is the page. A shadow and a rounded border printed
+       around a document look like a mistake, and the ring eats toner. */
+    .cr-sheet {
+      box-shadow: none !important;
+      border: 0 !important;
+      outline: 0 !important;
+      max-width: none !important;
+      padding: 0 !important;
+      --tw-ring-shadow: 0 0 #0000 !important;
+    }
+
+    /* The blocks that must not break across pages: an invoice whose totals
+       are on the second sheet is one somebody has to reassemble, and half a
+       signature line is not a signature line. */
+    .cr-totals,
+    .cr-payments,
+    .cr-signature {
+      break-inside: avoid;
+    }
+
+    /*
+      The sheet fills the page, so the signature block can sit at the foot of
+      it.
+
+      `min-height` rather than `height`: a two-page invoice must still be able
+      to run on. Chromium maps `vh` to the printed page box, so this is the page
+      less its margins — and `100%` is the fallback for engines that do not,
+      which comes out the same because `html` and `body` are given the page's
+      height below.
+    */
+    html,
+    body {
+      height: 100%;
+    }
+
+    .cr-sheet {
+      display: flex !important;
+      flex-direction: column;
+      min-height: 100%;
+      min-height: calc(100vh - 28mm);
+    }
+
+    @page {
+      margin: 14mm;
+    }
+  }
+</style>
+
+<!-- The actions. `cr-no-print` because a printed invoice with a "Print" button
+     on it is the giveaway that a page was screenshotted rather than issued. -->
+<div class="cr-no-print mb-4 flex flex-wrap items-center gap-2">
+  <button
+    type="button"
+    class="flex h-10 items-center gap-1.5 rounded-control px-3 text-[14px] font-semibold text-cr-ink-muted transition-colors hover:bg-cr-tint hover:text-cr-ink"
+    (click)="back()"
+  >
+    <app-icon name="chevron-left" [size]="16" />
+    Billing
+  </button>
+
+  <div class="ml-auto flex items-center gap-2">
+    <!-- Where an invoice becomes paid. First of the three, because it is the
+         one somebody reaches for while a customer is on the phone. -->
+    <button
+      type="button"
+      class="flex h-10 items-center gap-1.5 rounded-control bg-cr-success px-4 text-[14px] font-semibold text-cr-surface transition-colors hover:opacity-90"
+      (click)="recordPayment()"
+    >
+      <app-icon name="wallet" [size]="16" />
+      Record payment
+    </button>
+
+    <button
+      type="button"
+      class="flex h-10 items-center gap-1.5 rounded-control px-4 text-[14px] font-semibold text-cr-blue ring-1 ring-cr-line transition-colors hover:bg-cr-tint"
+      (click)="edit()"
+    >
+      <app-icon name="tag" [size]="16" />
+      Edit invoice
+    </button>
+
+    <button
+      type="button"
+      class="flex h-10 items-center gap-1.5 rounded-control bg-cr-blue px-4 text-[14px] font-semibold text-cr-surface transition-colors hover:bg-cr-blue-hover"
+      (click)="print()"
+    >
+      <app-icon name="clipboard" [size]="16" />
+      Print or save as PDF
+    </button>
+  </div>
+</div>
+
+@if (error(); as message) {
+  <app-error-state [message]="message" (retry)="load()" />
+} @else if (document(); as doc) {
+  <!-- The sheet. A4-ish width so what is on screen is what comes out of the
+       printer, rather than a wide layout that reflows at print time into
+       something nobody has seen. -->
+  <article
+    class="cr-sheet mx-auto flex min-h-[1000px] max-w-[820px] flex-col rounded-card bg-cr-surface p-8 shadow-card ring-1 ring-cr-line/60"
+  >
+    <!-- Who is billing. The mark, the registered name, the TIN, the address and
+         somebody to ring: a document without these is a figure, not an
+         invoice. -->
+    <header class="flex flex-wrap items-start justify-between gap-6 border-b border-cr-ink/10 pb-6">
+      <div class="flex items-start gap-4">
+        @if (doc.issuer.logo_url) {
+          <img
+            [src]="doc.issuer.logo_url"
+            [alt]="(doc.issuer.name ?? 'Company') + ' logo'"
+            class="h-14 w-14 rounded-control object-contain"
+          />
+        } @else {
+          <!-- Initials rather than a hole where the logo goes. -->
+          <span
+            class="flex h-14 w-14 items-center justify-center rounded-control bg-cr-tint text-[18px] font-bold text-cr-blue"
+          >
+            {{ initials() }}
+          </span>
+        }
+
+        <div class="min-w-0">
+          <h1 class="text-[20px] leading-tight font-bold">{{ doc.issuer.name }}</h1>
+          @if (doc.issuer.address) {
+            <p class="mt-0.5 text-[13px] text-cr-ink-muted">{{ doc.issuer.address }}</p>
+          }
+          <p class="mt-0.5 text-[13px] text-cr-ink-muted">
+            @if (doc.issuer.contact_phone) {
+              <span>{{ doc.issuer.contact_phone }}</span>
+            }
+            @if (doc.issuer.contact_email) {
+              <span> · {{ doc.issuer.contact_email }}</span>
+            }
+          </p>
+          @if (doc.issuer.tin) {
+            <p class="cr-num mt-1 text-[12px] text-cr-ink-muted">
+              TIN {{ doc.issuer.tin }}
+              @if (doc.issuer.vat_registered) {
+                <span> · VAT registered</span>
+              }
+            </p>
+          }
+        </div>
+      </div>
+
+      <!-- The document's own identity: what it is, its number, and where it
+           stands. Right-aligned, which is where an accounts department looks
+           for a number. -->
+      <div class="text-right">
+        <p class="text-[11px] font-bold tracking-[0.14em] text-cr-blue uppercase">
+          {{ doc.document.title }}
+        </p>
+        <p class="cr-num mt-1 text-[22px] leading-none font-bold">{{ doc.document.number }}</p>
+        <div class="mt-2 flex justify-end">
+          <app-status-pill [status]="status()" />
+        </div>
+      </div>
+    </header>
+
+    <!-- Both parties, side by side, which is the shape every invoice uses:
+         who it is for on the left, when it is due on the right. -->
+    <section class="grid grid-cols-1 gap-6 border-b border-cr-ink/10 py-6 sm:grid-cols-2">
+      <div>
+        <h2 class="cr-meta">Billed to</h2>
+        <p class="mt-1 text-[15px] font-semibold">{{ doc.bill_to.name }}</p>
+        @if (doc.bill_to.address) {
+          <p class="text-[13px] text-cr-ink-muted">{{ doc.bill_to.address }}</p>
+        }
+        @if (doc.bill_to.contact) {
+          <p class="text-[13px] text-cr-ink-muted">{{ doc.bill_to.contact }}</p>
+        }
+        @if (doc.bill_to.tin) {
+          <p class="cr-num mt-1 text-[12px] text-cr-ink-muted">TIN {{ doc.bill_to.tin }}</p>
+        }
+        @if (doc.bill_to.vat_treatment_label) {
+          <p class="text-[12px] text-cr-ink-muted">{{ doc.bill_to.vat_treatment_label }}</p>
+        }
+      </div>
+
+      <dl class="grid grid-cols-2 gap-y-1.5 text-[13px] sm:justify-self-end">
+        <dt class="cr-meta">Issued</dt>
+        <dd class="cr-num text-right">{{ fmt.date(doc.document.issued_at) }}</dd>
+
+        <dt class="cr-meta">Due</dt>
+        <dd class="cr-num text-right" [class.text-cr-red]="doc.document.overdue">
+          {{ fmt.date(doc.document.due_at) }}
+        </dd>
+
+        @if (doc.document.terms_days !== null) {
+          <dt class="cr-meta">Terms</dt>
+          <dd class="cr-num text-right">{{ doc.document.terms_days }} days</dd>
+        }
+
+        <dt class="cr-meta">Currency</dt>
+        <dd class="cr-num text-right">{{ doc.document.currency }}</dd>
+      </dl>
+    </section>
+
+    <!-- What the money is for. For a freight invoice that is the haul itself —
+         the reference, the route, the load, the weight, the unit and the crew.
+         This is what makes it a delivery invoice rather than a demand. -->
+    <section class="py-6">
+      <h2 class="cr-meta mb-2">For the following delivery</h2>
+
+      <div class="overflow-x-auto">
+        <table class="w-full border-collapse text-left text-[13px]">
+          <thead>
+            <tr class="border-b border-cr-ink/10">
+              <th class="cr-th py-2 pr-3">Description</th>
+              <th class="cr-th py-2 pr-3">Reference</th>
+              <th class="cr-th py-2 pr-3">Delivered</th>
+              <th class="cr-th py-2 pr-3 text-right">Weight</th>
+              <th class="cr-th py-2 text-right">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (line of doc.lines; track $index) {
+              <tr class="border-b border-cr-ink/5 align-top">
+                <td class="py-3 pr-3">
+                  <span class="block font-medium">{{ line.description }}</span>
+                  @if (line.cargo) {
+                    <span class="block text-[12px] text-cr-ink-muted">{{ line.cargo }}</span>
+                  }
+                  @if (line.plate || line.driver) {
+                    <span class="block text-[12px] text-cr-ink-muted">
+                      @if (line.plate) {
+                        <span>Unit {{ line.plate }}</span>
+                      }
+                      @if (line.plate && line.driver) {
+                        <span> · </span>
+                      }
+                      @if (line.driver) {
+                        <span>{{ line.driver }}</span>
+                      }
+                    </span>
+                  }
+                </td>
+                <td class="cr-num py-3 pr-3">{{ line.reference ?? '—' }}</td>
+                <td class="cr-num py-3 pr-3">{{ fmt.date(line.delivered_at) }}</td>
+                <td class="cr-num py-3 pr-3 text-right">
+                  {{ line.weight_kg === null ? '—' : fmt.kg(line.weight_kg) }}
+                </td>
+                <td class="cr-num py-3 text-right font-semibold">
+                  {{ fmt.money(line.amount_cents, doc.document.currency) }}
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- The money. Every figure a Philippine freight invoice carries, in the
+         order it is read: net, VAT, total, withholding, and what should
+         actually arrive at the bank. -->
+    <section class="cr-totals flex flex-col gap-6 border-t border-cr-ink/10 pt-6 sm:flex-row">
+      <div class="min-w-0 flex-1">
+        <h2 class="cr-meta">Amount in words</h2>
+        <!-- Not decoration: a figure written out cannot be altered with a pen,
+             which is why invoices have carried one for a century. -->
+        <p class="mt-1 text-[14px] font-medium">{{ doc.totals.amount_in_words }}</p>
+
+        @if (doc.totals.withholding_cents > 0) {
+          <p class="mt-3 max-w-sm text-[12px] text-cr-ink-muted">
+            {{ withholdingRate() }}% creditable withholding tax has been deducted. The balance is
+            remitted to the BIR by the payer, and Form 2307 is expected with the payment.
+          </p>
+        }
+      </div>
+
+      <dl class="w-full text-[13px] sm:max-w-[300px]">
+        <div class="flex justify-between py-1">
+          <dt class="text-cr-ink-muted">Net of VAT</dt>
+          <dd class="cr-num">
+            {{ fmt.money(doc.totals.net_amount_cents, doc.document.currency) }}
+          </dd>
+        </div>
+
+        <div class="flex justify-between py-1">
+          <dt class="text-cr-ink-muted">
+            VAT
+            @if (doc.totals.vat_rate_bp) {
+              <span>({{ vatRate() }}%)</span>
+            }
+          </dt>
+          <dd class="cr-num">{{ fmt.money(doc.totals.vat_cents, doc.document.currency) }}</dd>
+        </div>
+
+        <div class="flex justify-between border-t border-cr-ink/10 py-2">
+          <dt class="font-semibold">Invoice total</dt>
+          <dd class="cr-num font-semibold">
+            {{ fmt.money(doc.totals.amount_cents, doc.document.currency) }}
+          </dd>
+        </div>
+
+        @if (doc.totals.withholding_cents > 0) {
+          <div class="flex justify-between py-1">
+            <dt class="text-cr-ink-muted">Less withholding ({{ withholdingRate() }}%)</dt>
+            <dd class="cr-num">
+              −{{ fmt.money(doc.totals.withholding_cents, doc.document.currency) }}
+            </dd>
+          </div>
+        }
+
+        <!-- The figure that matters at the bank: what the payer should actually
+             send, which for a customer who withholds is less than the total. -->
+        <div class="flex justify-between border-t border-cr-ink/10 py-2">
+          <dt class="font-semibold">Amount payable</dt>
+          <dd class="cr-num text-[15px] font-bold">
+            {{ fmt.money(doc.totals.due_cents, doc.document.currency) }}
+          </dd>
+        </div>
+
+        @if (doc.totals.paid_cents > 0) {
+          <div class="flex justify-between py-1">
+            <dt class="text-cr-ink-muted">Received</dt>
+            <dd class="cr-num text-cr-success">
+              −{{ fmt.money(doc.totals.paid_cents, doc.document.currency) }}
+            </dd>
+          </div>
+
+          <div class="flex justify-between border-t border-cr-ink/10 py-2">
+            <dt class="font-semibold">Balance due</dt>
+            <dd
+              class="cr-num text-[15px] font-bold"
+              [class.text-cr-success]="doc.totals.balance_cents === 0"
+            >
+              {{ fmt.money(doc.totals.balance_cents, doc.document.currency) }}
+            </dd>
+          </div>
+        }
+      </dl>
+    </section>
+
+    <!-- What has been paid against it, line by line. A reprinted invoice that
+         still asked for the full amount is the document that starts the
+         argument — so every payment is on the page, with its own date, method
+         and reference. -->
+    @if (doc.payments.length > 0) {
+      <section class="cr-payments mt-6 border-t border-cr-ink/10 pt-6">
+        <h2 class="cr-meta mb-2">Payments received</h2>
+
+        <div class="overflow-x-auto">
+          <table class="w-full border-collapse text-left text-[13px]">
+            <thead>
+              <tr class="border-b border-cr-ink/10">
+                <th class="cr-th py-2 pr-3">Date</th>
+                <th class="cr-th py-2 pr-3">Method</th>
+                <th class="cr-th py-2 pr-3">Reference</th>
+                <th class="cr-th py-2 pr-3">Recorded by</th>
+                <th class="cr-th py-2 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (payment of doc.payments; track $index) {
+                <tr class="border-b border-cr-ink/5">
+                  <td class="cr-num py-2.5 pr-3">{{ fmt.date(payment.paid_on) }}</td>
+                  <td class="py-2.5 pr-3">{{ payment.method_label ?? '—' }}</td>
+                  <td class="cr-num py-2.5 pr-3">{{ payment.reference ?? '—' }}</td>
+                  <td class="py-2.5 pr-3 text-cr-ink-muted">{{ payment.recorded_by ?? '—' }}</td>
+                  <td class="cr-num py-2.5 text-right font-semibold">
+                    {{ fmt.money(payment.amount_cents, doc.document.currency) }}
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
+    }
+
+    <!--
+      The signature line, because a delivery invoice is a document somebody signs
+      for. Two names, both printed: whoever issued it, and whoever received the
+      load.
+
+      `mt-auto` is what keeps it at the foot of the page rather than tucked under
+      whatever the last section happened to be. On a one-line invoice the old
+      layout put the signature halfway up the sheet with white space under it,
+      which reads as a document that was cut short — and a receiver signing it
+      would be signing in the middle of a blank page. The sheet is a flex column
+      with a page's height, so this block takes up the slack above it and lands
+      where a signature belongs, on a short invoice and a long one alike.
+    -->
+    <footer
+      class="cr-signature mt-auto grid grid-cols-1 gap-8 border-t border-cr-ink/10 pt-6 sm:grid-cols-2"
+    >
+      <div>
+        <p class="cr-meta">Issued by</p>
+        <div class="mt-8 border-t border-cr-ink/30 pt-1">
+          <p class="text-[12px] text-cr-ink-muted">
+            {{ doc.issuer.contact_name ?? doc.issuer.name }}
+          </p>
+        </div>
+      </div>
+      <div>
+        <p class="cr-meta">Received by</p>
+        <div class="mt-8 border-t border-cr-ink/30 pt-1">
+          <p class="text-[12px] text-cr-ink-muted">Name, signature and date</p>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Under the signatures, and last on the page: the strip that identifies
+         the document itself if the sheet is ever separated from its file. -->
+    <p class="mt-6 shrink-0 text-center text-[11px] text-cr-ink-muted">
+      {{ doc.document.number }} · {{ doc.issuer.name }}
+      @if (doc.issuer.tin) {
+        <span> · TIN {{ doc.issuer.tin }}</span>
+      }
+      · This document was generated by Cargo Rush.
+    </p>
+  </article>
+} @else {
+  <!-- Loading. The sheet's own shape rather than generic rows, so the page does
+       not jump when the document arrives. -->
+  <article
+    class="mx-auto max-w-[820px] rounded-card bg-cr-surface p-8 shadow-card ring-1 ring-cr-line/60"
+  >
+    <div class="flex justify-between gap-6">
+      <div class="flex gap-4">
+        <div class="cr-skeleton h-14 w-14"></div>
+        <div class="flex flex-col gap-2">
+          <div class="cr-skeleton h-5 w-48"></div>
+          <div class="cr-skeleton h-3 w-40"></div>
+          <div class="cr-skeleton h-3 w-32"></div>
+        </div>
+      </div>
+      <div class="flex flex-col items-end gap-2">
+        <div class="cr-skeleton h-3 w-24"></div>
+        <div class="cr-skeleton h-6 w-40"></div>
+      </div>
+    </div>
+    <div class="mt-8 flex flex-col gap-2">
+      <div class="cr-skeleton h-4 w-full"></div>
+      <div class="cr-skeleton h-4 w-5/6"></div>
+      <div class="cr-skeleton h-4 w-2/3"></div>
+    </div>
+  </article>
+}

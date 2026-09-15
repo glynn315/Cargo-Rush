@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Delivery\Models;
 
 use App\Domain\Shared\Enums\StatusValue;
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use App\Domain\Trip\Models\Trip;
 use Database\Factories\DeliveryLogFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -18,7 +19,7 @@ use Illuminate\Support\Facades\Storage;
 class DeliveryLog extends Model
 {
     /** @use HasFactory<DeliveryLogFactory> */
-    use HasFactory, HasUlids, SoftDeletes;
+    use BelongsToCompany, HasFactory, HasUlids, SoftDeletes;
 
     protected $fillable = [
         'trip_id', 'delivered_at', 'pod_ref', 'pod_image_path', 'receiver_name', 'status',

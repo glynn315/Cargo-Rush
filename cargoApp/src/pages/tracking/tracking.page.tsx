@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
 
+import { RouteMap } from '@/components/route-map';
 import { TrackingControl } from '@/components/tracking-control';
 import { gpsService } from '@/services/gps/gps.service';
 import { Screen } from '@/components/screen';
@@ -57,13 +58,20 @@ export function TrackingPage() {
       <Screen title="Tracking" subtitle={trip.data.reference}>
         <TrackingControl trip={trip.data} />
 
+        {/* The route comes first, and before any position has been reported.
+            This is the screen a driver lands on straight after the pre-trip
+            check clears them, and what they want at that moment is the shape
+            of the journey — not a note about the pings they have not sent
+            yet. */}
+        <RouteMap trip={trip.data} />
+
         <Card style={{ marginTop: Spacing.three }}>
           <EmptyState
             title="No positions reported yet"
             body={
               loading
-                ? "Checking for positions…"
-                : "Start reporting above and your position appears here, and on the office map."
+                ? 'Checking for positions…'
+                : 'Start reporting above and your position appears here, and on the office map.'
             }
           />
         </Card>
@@ -76,6 +84,10 @@ export function TrackingPage() {
   return (
     <Screen title="Tracking" subtitle={data.reference}>
       <TrackingControl trip={trip.data} />
+
+      {/* The road ahead, with the unit on it. Above the figures because a
+          driver reads the map first and the numbers to confirm it. */}
+      <RouteMap trip={trip.data} here={data.current} />
 
       {/* Speed */}
       <View style={styles.speedRow}>

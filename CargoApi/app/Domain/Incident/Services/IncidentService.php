@@ -34,6 +34,17 @@ class IncidentService
         return $this->incidents->paginate($filters, $perPage);
     }
 
+    /**
+     * What one driver has reported — the handset's own list.
+     *
+     * Scoped in the repository by a `where` that cannot be dropped, rather
+     * than by a filter, because "only yours" is the whole point of it.
+     */
+    public function forDriver(string $driverId, int $perPage = 20): LengthAwarePaginator
+    {
+        return $this->incidents->paginateForDriver($driverId, $perPage);
+    }
+
     public function report(IncidentData $data): Incident
     {
         return DB::transaction(function () use ($data): Incident {

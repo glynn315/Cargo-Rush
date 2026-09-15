@@ -6,6 +6,7 @@ namespace App\Domain\Hr\Services;
 
 use App\Domain\Hr\DTO\ApplicantData;
 use App\Domain\Hr\DTO\EmployeeData;
+use App\Domain\Hr\DTO\LicenceData;
 use App\Domain\Hr\Models\Applicant;
 use App\Domain\Hr\Models\Employee;
 use App\Domain\Hr\Repositories\ApplicantRepository;
@@ -116,6 +117,14 @@ class ApplicantService extends CrudService
         );
 
         return DB::transaction(function () use ($applicant, $overrides): Employee {
+            // The licence travels separately, as it does everywhere else: it is
+            // a `drivers` column, and `EmployeeData` goes straight into
+            // `employees`. Split here rather than filtered downstream so the
+            // two never share a bag on the way through.
+            $licence = LicenceData::fromArray(
+                collect($overrides)->only(['licence_no', 'licence_expiry'])->all()
+            );
+
             $employee = $this->employees->register(
                 EmployeeData::fromArray([
                     'first_name' => $applicant->first_name,
@@ -125,9 +134,10 @@ class ApplicantService extends CrudService
                     'email' => $applicant->email,
                     'address' => $applicant->address,
                     'hired_on' => Carbon::now()->toDateString(),
-                    ...$overrides,
+                    ...collect($overrides)->except(['licence_no', 'licence_expiry'])->all(),
                 ]),
                 photo: null,
+                licence: $licence,
             );
 
             // The photograph moves across as a path rather than being copied:

@@ -92,9 +92,18 @@ class RoleSeeder extends Seeder
                     'delivery.view', 'vehicles.view', 'vehicles.manage',
                     'drivers.view', 'drivers.manage', 'fuel.view', 'fuel.manage',
                     'finance.view', 'finance.manage', 'expenses.view', 'expenses.manage',
+                    // The books, both halves: a GM runs the business and signs
+                    // off what the statements say — and payroll, which is the
+                    // largest cheque the firm writes.
+                    'accounting.view', 'accounting.manage',
+                    'payroll.view', 'payroll.manage',
                     'sales.view', 'pricing.view', 'pricing.manage',
                     'customers.view', 'customers.manage', 'billing.view', 'billing.manage',
                     'hr.view', 'hr.manage', 'access.view',
+                    // The company's own identity, but still not `access.manage`
+                    // — the GM runs the company, the administrator hands out
+                    // keys, and that is the one line between them.
+                    'company.manage',
                     'incidents.view', 'incidents.manage', 'notifications.view',
                 ],
             ],
@@ -116,6 +125,11 @@ class RoleSeeder extends Seeder
                 'system' => false,
                 'permissions' => [
                     'trips.view', 'fuel.view', 'fuel.manage', 'finance.view', 'finance.manage',
+                    // Whose job this is. The general journal and the general
+                    // ledger are the accountant's book before they are
+                    // anybody's report — and payroll is theirs to run.
+                    'accounting.view', 'accounting.manage',
+                    'payroll.view', 'payroll.manage',
                     'customers.view', 'billing.view', 'billing.manage',
                     'pricing.view', 'pricing.manage', 'expenses.view', 'expenses.manage',
                     'sales.view', 'notifications.view',
@@ -128,6 +142,11 @@ class RoleSeeder extends Seeder
                 'system' => false,
                 'permissions' => [
                     'finance.view', 'expenses.view', 'expenses.manage', 'sales.view',
+                    // Reads the books, does not post to them. Treasury moves
+                    // money and files spend; what the entry says about it is
+                    // the accountant's call, and an install where both could
+                    // post has nobody left to check the other.
+                    'accounting.view',
                     'billing.view', 'billing.manage', 'customers.view',
                     'pricing.view', 'notifications.view',
                 ],
@@ -139,6 +158,16 @@ class RoleSeeder extends Seeder
                 'system' => false,
                 'permissions' => [
                     'hr.view', 'hr.manage', 'drivers.view', 'notifications.view',
+                    /**
+                     * Reads payroll, does not run it.
+                     *
+                     * HR owns the roster and the salaries on it, and needs to
+                     * see what people were paid to answer for it. Approving a
+                     * run and posting it to the books is the money side, and
+                     * whoever keeps the roster should not also be the one who
+                     * signs off the cheque.
+                     */
+                    'payroll.view',
                 ],
             ],
             [
@@ -148,7 +177,8 @@ class RoleSeeder extends Seeder
                 'system' => true,
                 'permissions' => [
                     'trips.view', 'gps.write', 'delivery.view', 'delivery.write',
-                    'inspection.write', 'finance.write', 'notifications.view',
+                    'inspection.write', 'incidents.write', 'finance.write',
+                    'notifications.view',
                 ],
             ],
             [

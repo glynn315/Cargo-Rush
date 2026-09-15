@@ -30,7 +30,20 @@ const MEANING: Partial<Record<StatusValue, string>> = {
   cancelled: 'Cancelled',
 };
 
-type Filter = 'all' | 'open' | 'delivered';
+/**
+ * Two views, and no "all".
+ *
+ * A delivery that has been handed over and signed for is finished business: it
+ * belongs in **History**, and showing it beside the loads somebody is waiting
+ * on buries the ones that still need chasing. A month of completed runs at the
+ * top of the list is exactly how a customer stops reading the list.
+ *
+ * So `active` is the screen's own answer to "what is happening to my freight"
+ * — everything still in play — and `history` is where the finished ones live.
+ * There is nowhere else for them to appear: the home screen shows active runs
+ * too, for the same reason.
+ */
+type Filter = 'active' | 'history';
 
 /**
  * The customer's deliveries.
@@ -45,22 +58,36 @@ type Filter = 'all' | 'open' | 'delivered';
  */
 export function OrdersPage() {
   const requests = useApi(portalService.requests);
-  const [filter, setFilter] = useState<Filter>('all');
+  const [filter, setFilter] = useState<Filter>('active');
+
+  /**
+   * Which delivery's checklist is open.
+   *
+   * One at a time, and closed by default: whether the truck was checked is a
+   * line on the row, and which seven things were checked is a second question
+   * that would otherwise turn a list of deliveries into a wall of ticks.
+   */
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const all = requests.data ?? [];
 
+  /**
+   * Finished business: delivered, or cancelled.
+   *
+   * Both are done with — one well, one not — and neither is something the
+   * customer can act on. They go to History together rather than a cancelled
+   * run sitting in the active list forever with nothing to do about it.
+   */
+  const isHistory = (status: StatusValue): boolean =>
+    status === 'delivered' || status === 'cancelled';
+
   const rows = all.filter((trip) =>
-    filter === 'all'
-      ? true
-      : filter === 'delivered'
-        ? trip.status === 'delivered'
-        : trip.status !== 'delivered' && trip.status !== 'cancelled',
+    filter === 'history' ? isHistory(trip.status) : !isHistory(trip.status),
   );
 
   const counts: Record<Filter, number> = {
-    all: all.length,
-    open: all.filter((t) => t.status !== 'delivered' && t.status !== 'cancelled').length,
-    delivered: all.filter((t) => t.status === 'delivered').length,
+    active: all.filter((t) => !isHistory(t.status)).length,
+    history: all.filter((t) => isHistory(t.status)).length,
   };
 
   return (
@@ -68,9 +95,8 @@ export function OrdersPage() {
       <View style={styles.filters}>
         {(
           [
-            { key: 'all', label: 'All' },
-            { key: 'open', label: 'In progress' },
-            { key: 'delivered', label: 'Delivered' },
+            { key: 'active', label: 'In progress' },
+            { key: 'history', label: 'History' },
           ] as { key: Filter; label: string }[]
         ).map((option) => {
           const picked = filter === option.key;
@@ -103,11 +129,19 @@ export function OrdersPage() {
           <ErrorState message={requests.error.message} onRetry={requests.reload} />
         ) : rows.length === 0 ? (
           <EmptyState
-            title={all.length === 0 ? 'No deliveries yet' : 'Nothing in this view'}
+            title={
+              all.length === 0
+                ? 'No deliveries yet'
+                : filter === 'history'
+                  ? 'Nothing finished yet'
+                  : 'Nothing on the move'
+            }
             body={
               all.length === 0
                 ? 'Ask for a pickup and it will appear here while the office confirms it.'
-                : 'Switch the filter to see the rest.'
+                : filter === 'history'
+                  ? 'Deliveries appear here once they have been handed over.'
+                  : 'Everything you have sent has been delivered — they are under History.'
             }
           />
         ) : (
@@ -117,6 +151,18 @@ export function OrdersPage() {
                 <Text style={styles.rowRef}>{trip.reference}</Text>
                 <StatusPill status={trip.status} />
               </View>
+
+              {/* Who is holding it. A firm that signed itself up may be using
+                  three hauliers at once, and a reference without the name
+                  beside it is a number with no office to quote it to. */}
+              {trip.carrier ? (
+                <View style={styles.carrierRow}>
+                  <Icon name="fleet" size={13} color={Brand.inkMuted} />
+                  <Text style={styles.carrierName} numberOfLines={1}>
+                    {trip.carrier}
+                  </Text>
+                </View>
+              ) : null}
 
               <View style={styles.routeRow}>
                 <Icon name="map-pin" size={14} color={Brand.blue} />
@@ -148,6 +194,86 @@ export function OrdersPage() {
                   {trip.vehicle_plate ? ` · ${trip.vehicle_plate}` : ''}
                 </Text>
               ) : null}
+
+              {/*
+                Was the truck checked before it left?
+
+                The pre-trip check is the haulier's own safety routine — tyres,
+                brakes, lights, documents — and a run cannot start without
+                passing one. Showing it here is showing the customer the answer
+                to a question they would otherwise have to ring and ask about
+                their own load.
+
+                A held unit says so and stops there. Which brake failed is
+                between the fleet and its mechanic, and the API does not send it
+                to a customer — see `InspectionService::summaryFor()`.
+              */}
+              {trip.inspection ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: expanded === trip.id }}
+                  accessibilityLabel={
+                    trip.inspection.passed
+                      ? `Pre-trip check passed, ${trip.inspection.passed_items} of ${trip.inspection.total_items} items`
+                      : 'Pre-trip check not cleared yet'
+                  }
+                  onPress={() => setExpanded(expanded === trip.id ? null : trip.id)}
+                  style={[
+                    styles.checkRow,
+                    {
+                      backgroundColor: trip.inspection.passed ? Brand.successBg : Brand.tint,
+                    },
+                  ]}>
+                  <Icon
+                    name={trip.inspection.passed ? 'check' : 'clipboard'}
+                    size={14}
+                    color={trip.inspection.passed ? Brand.success : Brand.inkMuted}
+                  />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text
+                      style={[
+                        styles.checkTitle,
+                        { color: trip.inspection.passed ? Brand.success : Brand.inkMuted },
+                      ]}>
+                      {trip.inspection.passed
+                        ? `Unit checked · ${trip.inspection.passed_items}/${trip.inspection.total_items} passed`
+                        : 'Awaiting pre-trip check'}
+                    </Text>
+                    <Text style={styles.checkSub}>
+                      {trip.inspection.passed
+                        ? `${fmt.dateTime(trip.inspection.inspected_at)}${
+                            trip.inspection.checked_by ? ' · ' + trip.inspection.checked_by : ''
+                          }`
+                        : 'The load leaves once the truck has passed its check.'}
+                    </Text>
+                  </View>
+                  {trip.inspection.items.length > 0 ? (
+                    <Icon
+                      name={expanded === trip.id ? 'chevron-left' : 'chevron-right'}
+                      size={14}
+                      color={Brand.inkMuted}
+                    />
+                  ) : null}
+                </Pressable>
+              ) : null}
+
+              {/* The checklist itself, when they ask for it. Collapsed by
+                  default: seven items is the answer to "what was checked",
+                  which is a second question. */}
+              {expanded === trip.id && trip.inspection?.items.length ? (
+                <View style={styles.checkList}>
+                  {trip.inspection.items.map((item) => (
+                    <View key={item.key} style={styles.checkItem}>
+                      <Icon
+                        name={item.passed === false ? 'close' : 'check'}
+                        size={12}
+                        color={item.passed === false ? Brand.red : Brand.success}
+                      />
+                      <Text style={styles.checkItemLabel}>{item.label}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
             </View>
           ))
         )}
@@ -170,6 +296,28 @@ function Meta({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
+  checkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    marginTop: Spacing.two,
+    paddingHorizontal: Spacing.two + 2,
+    paddingVertical: Spacing.two,
+    borderRadius: Radius.control,
+    minHeight: Hit.min,
+  },
+  checkTitle: { fontSize: 12, fontWeight: '700' },
+  checkSub: { marginTop: 1, fontSize: 11, color: Brand.inkMuted },
+
+  checkList: {
+    marginTop: Spacing.one,
+    paddingHorizontal: Spacing.two + 2,
+    paddingBottom: Spacing.two,
+    gap: 4,
+  },
+  checkItem: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  checkItemLabel: { fontSize: 12, color: Brand.ink },
+
   filters: { flexDirection: 'row', gap: Spacing.two },
   filter: {
     flexDirection: 'row',
@@ -196,6 +344,8 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   rowRef: { fontSize: 15, fontWeight: '700', color: Brand.ink, fontVariant: ['tabular-nums'] },
+  carrierRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  carrierName: { flex: 1, minWidth: 0, fontSize: 12, fontWeight: '600', color: Brand.inkMuted },
   routeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   route: { flex: 1, fontSize: 14, color: Brand.ink },
   meaning: { fontSize: 12, color: Brand.inkMuted },

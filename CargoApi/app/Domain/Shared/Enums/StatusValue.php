@@ -24,6 +24,15 @@ enum StatusValue: string
     case Overdue = 'overdue';
     case Inactive = 'inactive';
     /**
+     * Paid in part, but not in full.
+     *
+     * A state the system could not express while settling an invoice was one
+     * flip from `pending` to `paid`: ₱50,000 against a ₱120,000 document had
+     * to be recorded as one or the other, and both were wrong — the first
+     * loses the money, the second loses the debt.
+     */
+    case Partial = 'partial';
+    /**
      * Money that has actually arrived.
      *
      * Settling an invoice used to write `delivered`, which is the word for a
@@ -41,7 +50,9 @@ enum StatusValue: string
         return match ($this) {
             self::Active, self::Delivered, self::Paid => Tone::Success,
             self::Available, self::InTransit, self::Assigned, self::Scheduled => Tone::Info,
-            self::Pending, self::Maintenance => Tone::Warning,
+            // Amber, like `pending`: money has arrived but the document is not
+            // closed, and it still needs chasing.
+            self::Pending, self::Maintenance, self::Partial => Tone::Warning,
             self::Cancelled, self::Overdue, self::Inactive => Tone::Danger,
         };
     }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Billing\Console;
 
 use App\Domain\Billing\Services\PricingService;
+use App\Domain\Tenancy\Console\Concerns\RunsPerCompany;
 use App\Domain\Trip\Models\Trip;
 use Illuminate\Console\Command;
 
@@ -33,11 +34,26 @@ use Illuminate\Console\Command;
  */
 class QuoteUnpricedTripsCommand extends Command
 {
+    use RunsPerCompany;
+
     protected $signature = 'cargo:trips-quote {--dry-run : List what would be priced and change nothing}';
 
     protected $description = 'Quote trips booked before the tariff existed';
 
     public function handle(PricingService $pricing): int
+    {
+        return $this->eachCompany(fn () => $this->quoteAll($pricing));
+    }
+
+    /**
+     * One company's unpriced trips, quoted against its own rate card.
+     *
+     * Per company for more than the write: `PricingService` resolves a zone and
+     * a diesel baseline, and both of those are now the company's own rows. A
+     * pass across every firm at once would price a haul off somebody else's
+     * card.
+     */
+    private function quoteAll(PricingService $pricing): void
     {
         $unpriced = Trip::query()
             ->where('price_cents', 0)
@@ -48,7 +64,7 @@ class QuoteUnpricedTripsCommand extends Command
         if ($unpriced->isEmpty()) {
             $this->info('Every trip is priced. Nothing to quote.');
 
-            return self::SUCCESS;
+            return;
         }
 
         $dryRun = (bool) $this->option('dry-run');
@@ -84,7 +100,5 @@ class QuoteUnpricedTripsCommand extends Command
                 .'Pin both ends on the map and re-run to quote them properly.'
             );
         }
-
-        return self::SUCCESS;
     }
 }

@@ -6,7 +6,9 @@ namespace App\Domain\Shared\Providers;
 
 use App\Domain\Billing\Console\QuoteUnpricedTripsCommand;
 use App\Domain\Billing\Console\ReconcileOverdueInvoicesCommand;
+use App\Domain\Billing\Console\RequoteInvoicesCommand;
 use App\Domain\Billing\Models\Invoice;
+use App\Domain\Billing\Models\Payment;
 use App\Domain\Customer\Models\Customer;
 use App\Domain\Delivery\Models\DeliveryLog;
 use App\Domain\Dispatch\Models\DispatchRecord;
@@ -28,15 +30,21 @@ use App\Domain\Identity\Models\User;
 use App\Domain\Incident\Models\Incident;
 use App\Domain\Notification\Models\NotificationItem;
 use App\Domain\Pricing\Models\PricingZone;
+use App\Domain\Tenancy\Models\Company;
+use App\Domain\Tenancy\Support\Tenant;
 use App\Domain\Trip\Console\ReconcileOverdueTripsCommand;
 use App\Domain\Trip\Console\ReleaseDueTripsCommand;
 use App\Domain\Trip\Models\Trip;
 use App\Domain\Vehicle\Models\Vehicle;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Str;
 
 /**
  * Wires the domain modules into the framework.
@@ -76,11 +84,26 @@ class DomainServiceProvider extends ServiceProvider
         'undertime' => UndertimeRequest::class,
         'role' => Role::class,
         'position' => Position::class,
+        'company' => Company::class,
+        'payment' => Payment::class,
     ];
 
     public function register(): void
     {
-        //
+        /**
+         * Which company the code currently running belongs to.
+         *
+         * A singleton because it has to be *the same object* everywhere: the
+         * middleware sets it, and the global scope on twenty-eight models reads
+         * it on every query. A fresh instance per resolution would mean the
+         * scope reading an empty one and filtering nothing, which is the one
+         * failure mode this whole design exists to prevent.
+         *
+         * Scoped to the request, so nothing survives into the next one. Under
+         * Octane or a queue worker the process is reused, and a company left
+         * behind by the last request would silently answer the next.
+         */
+        $this->app->scoped(Tenant::class);
     }
 
     public function boot(): void
@@ -94,6 +117,8 @@ class DomainServiceProvider extends ServiceProvider
                 ReleaseDueTripsCommand::class,
                 ReconcileOverdueTripsCommand::class,
                 ReconcileOverdueInvoicesCommand::class,
+                // A one-off repair rather than a sweep: nothing schedules it.
+                RequoteInvoicesCommand::class,
                 QuoteUnpricedTripsCommand::class,
             ]);
         }
@@ -101,6 +126,8 @@ class DomainServiceProvider extends ServiceProvider
         foreach (self::BINDINGS as $parameter => $model) {
             Route::model($parameter, $model);
         }
+
+        $this->rateLimits();
 
         // Permissions are role-derived strings, not policy classes, so one
         // `before` hook answers every `can()` in the app. Returning null on a
@@ -114,5 +141,81 @@ class DomainServiceProvider extends ServiceProvider
         Factory::guessFactoryNamesUsing(
             static fn (string $modelName): string => sprintf('Database\Factories\%sFactory', class_basename($modelName))
         );
+    }
+
+    /**
+     * How often a caller may knock.
+     *
+     * Laravel does not throttle the API group for you — `withRouting` builds it
+     * without a limiter — so until this existed `POST /login` and
+     * `POST /register` were unmetered. On a single-tenant install behind an
+     * office firewall that was survivable. With a public registration endpoint
+     * it is not: an unmetered login is an invitation to work through a list of
+     * leaked passwords, and an unmetered register is unlimited companies.
+     *
+     * Three limits, because the three things being protected fail differently.
+     */
+    private function rateLimits(): void
+    {
+        /**
+         * Everything behind `auth:sanctum`.
+         *
+         * Keyed on the account rather than the address it came from: a fleet
+         * office is a dozen people behind one NAT, and an IP limit would have
+         * them throttling each other. Generous, because the dashboard alone
+         * fires five calls and a driver's handset reports position every
+         * minute — this is a runaway-client guard, not a usage policy.
+         */
+        RateLimiter::for('api', static fn (Request $request) => Limit::perMinute(300)
+            ->by($request->user()?->getAuthIdentifier() ?? $request->ip()));
+
+        /**
+         * Signing in.
+         *
+         * Keyed on **the address being tried plus the caller's IP**. Keying on
+         * the IP alone lets one host work through a thousand accounts at five
+         * a minute each; keying on the email alone lets anybody lock a known
+         * user out of their own account by failing their login on purpose. The
+         * pair costs an attacker a fresh IP for every account they want to
+         * try, and cannot be used as a denial of service against one person.
+         */
+        RateLimiter::for('login', static fn (Request $request) => Limit::perMinute(5)
+            ->by(Str::lower((string) $request->input('email')).'|'.$request->ip()));
+
+        /**
+         * Registering — a company on the web, a customer in the app.
+         *
+         * Per hour, per IP, because this is the one endpoint where a
+         * *successful* request costs the platform real storage: a company, a
+         * set of roles and a permanent row. So unlike login, where only
+         * failures are worth counting, the successes are metered too.
+         *
+         * Twenty rather than five, and the reason is the arithmetic of a form
+         * that is being filled in wrong. The middleware counts every attempt,
+         * including the ones the validator rejects — a mistyped address, a
+         * password on the breached list, a mismatched confirmation — so a tight
+         * cap does not meter *registrations*, it locks somebody out of the
+         * sign-up form for an hour while they are still trying to use it. Which
+         * is exactly what it did. Twenty is still bounded, and twenty companies
+         * an hour from one address is not a threat anybody needs a smaller
+         * number to survive.
+         *
+         * Both clients say what a 429 means rather than printing the status,
+         * because "the server refused that request (429)" reads as a broken
+         * form and somebody who believes the form is broken keeps pressing.
+         */
+        RateLimiter::for('register', static fn (Request $request) => Limit::perHour(20)->by($request->ip()));
+
+        /**
+         * The public carrier list.
+         *
+         * The one read anybody can make without an account, because a shipper
+         * has to see who is near them *before* they have somewhere to sign in
+         * to. Per minute and per IP, generously — the sign-up screen refetches
+         * as somebody drags the map — but metered, because it is a query over
+         * every company on the platform and the only unauthenticated read there
+         * is.
+         */
+        RateLimiter::for('carriers', static fn (Request $request) => Limit::perMinute(60)->by($request->ip()));
     }
 }

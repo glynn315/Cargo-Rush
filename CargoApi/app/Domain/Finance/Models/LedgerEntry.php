@@ -6,6 +6,7 @@ namespace App\Domain\Finance\Models;
 
 use App\Domain\Customer\Models\Customer;
 use App\Domain\Identity\Models\User;
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use App\Domain\Trip\Models\Trip;
 use Database\Factories\LedgerEntryFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -24,7 +25,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class LedgerEntry extends Model
 {
     /** @use HasFactory<LedgerEntryFactory> */
-    use HasFactory, HasUlids, SoftDeletes;
+    use BelongsToCompany, HasFactory, HasUlids, SoftDeletes;
 
     protected $fillable = [
         'truck_id', 'trip_id', 'customer_id', 'date', 'trip_income_cents', 'fuel_cents',

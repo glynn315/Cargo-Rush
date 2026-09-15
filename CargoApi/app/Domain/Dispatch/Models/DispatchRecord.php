@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Dispatch\Models;
 
 use App\Domain\Shared\Enums\StatusValue;
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use App\Domain\Trip\Models\Trip;
 use App\Domain\Vehicle\Models\Vehicle;
 use Database\Factories\DispatchRecordFactory;
@@ -18,7 +19,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class DispatchRecord extends Model
 {
     /** @use HasFactory<DispatchRecordFactory> */
-    use HasFactory, HasUlids, SoftDeletes;
+    use BelongsToCompany, HasFactory, HasUlids, SoftDeletes;
 
     protected $fillable = [
         'trip_id', 'vehicle_id', 'dispatched_at', 'location', 'arrived_at', 'status',

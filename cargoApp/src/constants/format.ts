@@ -55,4 +55,22 @@ export const fmt = {
   metresAsKm(value: number): string {
     return `${(value / 1000).toFixed(1)} km`;
   },
+
+  /**
+   * Seconds on the wire, hours and minutes on screen.
+   *
+   * `4h 20m`, not `4.33 hours` and not `260 minutes`: a driving time is read
+   * off a phone and turned into "I'll be there by half nine", which hours and
+   * minutes do in one step. Under an hour drops the hours entirely rather than
+   * printing `0h 40m`.
+   */
+  duration(seconds: number): string {
+    const total = Math.max(0, Math.round(seconds / 60));
+    const hours = Math.floor(total / 60);
+    const minutes = total % 60;
+
+    if (hours === 0) return `${minutes}m`;
+
+    return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+  },
 };

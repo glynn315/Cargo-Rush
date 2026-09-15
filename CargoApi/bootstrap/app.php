@@ -2,10 +2,13 @@
 
 use App\Domain\Shared\Http\Middleware\RequirePermission;
 use App\Domain\Shared\Providers\DomainServiceProvider;
+use App\Domain\Tenancy\Http\Middleware\BindTenant;
+use App\Domain\Tenancy\Http\Middleware\ForgetTenant;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Laravel\Sanctum\Http\Middleware\CheckAbilities;
 use Laravel\Sanctum\Http\Middleware\CheckForAnyAbility;
 
@@ -20,15 +23,48 @@ return Application::configure(basePath: dirname(__DIR__))
         DomainServiceProvider::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
+        /**
+         * Two changes to the API group, and both are about ordering.
+         *
+         * `ForgetTenant` goes first, ahead of authentication: a request starts
+         * scoped to no company, so working out who is calling is not filtered
+         * by whoever called last. It matters only where a process is reused,
+         * which is exactly where it is easy to miss.
+         *
+         * `SubstituteBindings` comes *out* of the group, and is put back as a
+         * route middleware after `tenant` — see the authenticated group in
+         * `routes/api.php`. Group middleware all run before route middleware,
+         * so left here it would resolve `{vehicle}`, `{trip}` and every other
+         * bound model *before* the caller's company was in force, which is to
+         * say unscoped: an id in a URL would fetch another company's row and
+         * the controller would hand it over. No public route takes a
+         * parameter, so nothing outside that group needs it.
+         */
+        $middleware->api(prepend: ForgetTenant::class, remove: SubstituteBindings::class);
+
         // CargoUI authenticates as a first-party SPA, so its cookie has to
         // reach the API group. cargoApp sends a bearer token and is unaffected.
         $middleware->statefulApi();
+
+        // Laravel does not meter the API group on its own. Without this the
+        // whole API is unlimited, which matters most on the two public routes
+        // — see the limiters in `DomainServiceProvider`. Keyed per account, so
+        // an office behind one NAT does not throttle itself.
+        $middleware->throttleApi('api');
 
         $middleware->alias([
             // What makes a role mean something. Without it the permission list
             // decides only what the sidebar shows, and every endpoint is
             // reachable by any account that can sign in.
             'permission' => RequirePermission::class,
+            // Puts the caller's company in force before any controller runs.
+            // Paired with `auth:sanctum` on the whole authenticated group —
+            // an endpoint inside that group without it would query across
+            // every company on the platform.
+            'tenant' => BindTenant::class,
+            // Route model binding, as a route middleware so it can be ordered
+            // after `tenant`. Laravel has no alias for it of its own.
+            'bindings' => SubstituteBindings::class,
             'abilities' => CheckAbilities::class,
             'ability' => CheckForAnyAbility::class,
         ]);

@@ -16,6 +16,13 @@ use App\Domain\Shared\Enums\StatusValue;
  * through the DTO would mean either a `UploadedFile` in something whose whole
  * job is to be a flat set of column values, or a path invented before the file
  * exists.
+ *
+ * **Neither is `driver_id`, and that one is a change.** It used to be here,
+ * filled from a dropdown of every driver on file. It is now decided by
+ * `EmployeeService` from the licence number instead — see `LicenceData` — so
+ * the client no longer sends it and nothing here should carry it. Leaving the
+ * field would mean a payload naming somebody else's driver record was still
+ * obeyed, which is the whole thing the change removes.
  */
 final class EmployeeData extends Data
 {
@@ -38,7 +45,6 @@ final class EmployeeData extends Data
         public readonly ?string $emergency_contact = null,
         public readonly ?string $emergency_phone = null,
         public readonly ?int $base_salary_cents = null,
-        public readonly ?string $driver_id = null,
         public readonly ?string $notes = null,
     ) {}
 
@@ -66,7 +72,6 @@ final class EmployeeData extends Data
             base_salary_cents: isset($attributes['base_salary_cents'])
                 ? (int) $attributes['base_salary_cents']
                 : null,
-            driver_id: $attributes['driver_id'] ?? null,
             notes: $attributes['notes'] ?? null,
         );
     }
@@ -91,7 +96,6 @@ final class EmployeeData extends Data
             'emergency_contact' => $this->emergency_contact,
             'emergency_phone' => $this->emergency_phone,
             'base_salary_cents' => $this->base_salary_cents,
-            'driver_id' => $this->driver_id,
             'notes' => $this->notes,
         ];
     }

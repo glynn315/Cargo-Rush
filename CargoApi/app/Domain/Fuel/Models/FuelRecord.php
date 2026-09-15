@@ -6,6 +6,7 @@ namespace App\Domain\Fuel\Models;
 
 use App\Domain\Driver\Models\Driver;
 use App\Domain\Shared\Enums\StatusValue;
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use App\Domain\Vehicle\Models\Vehicle;
 use Database\Factories\FuelRecordFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -18,7 +19,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class FuelRecord extends Model
 {
     /** @use HasFactory<FuelRecordFactory> */
-    use HasFactory, HasUlids, SoftDeletes;
+    use BelongsToCompany, HasFactory, HasUlids, SoftDeletes;
 
     protected $fillable = [
         'vehicle_id', 'driver_id', 'litres', 'amount_cents', 'currency',

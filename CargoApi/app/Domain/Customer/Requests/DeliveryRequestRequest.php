@@ -32,6 +32,23 @@ class DeliveryRequestRequest extends ApiFormRequest
     public function rules(): array
     {
         return [
+            /**
+             * Which haulier is being asked, from `GET portal/carriers`.
+             *
+             * Optional, and the omission is meaningful rather than lazy: a
+             * customer the office put on the books, and every client written
+             * before carriers could be chosen, means "the firm I already deal
+             * with" — so an absent `carrier_id` files with the caller's home
+             * carrier exactly as it always did.
+             *
+             * Not validated against `companies` here. `exists` would confirm
+             * the id names a real company to anybody who can guess a ULID; the
+             * controller resolves it through `CarrierDirectory`, which answers
+             * 404 for a company that is neither offering to take work nor
+             * already the customer's.
+             */
+            'carrier_id' => ['nullable', 'string', 'size:26'],
+
             'origin' => ['required', 'string', 'max:160'],
             // Optional coordinates, exactly as the office form has them: a
             // place name is enough to book against, but half a coordinate is
@@ -58,11 +75,20 @@ class DeliveryRequestRequest extends ApiFormRequest
         return [
             'weight_kg.min' => 'A delivery has to weigh something. Enter the weight in kilograms.',
             'preferred_at.after_or_equal' => 'Choose a pickup time that has not already passed.',
+            'carrier_id.size' => 'That is not a carrier we know. Pick one from the list.',
             'origin_lat.required_with' => 'A longitude needs its latitude.',
             'origin_lng.required_with' => 'A latitude needs its longitude.',
             'destination_lat.required_with' => 'A longitude needs its latitude.',
             'destination_lng.required_with' => 'A latitude needs its longitude.',
         ];
+    }
+
+    /** The haulier the customer picked, or null for their usual one. */
+    public function carrierId(): ?string
+    {
+        $id = trim((string) $this->input('carrier_id', ''));
+
+        return $id === '' ? null : $id;
     }
 
     /**
@@ -77,7 +103,11 @@ class DeliveryRequestRequest extends ApiFormRequest
     {
         $validated = $this->validated();
 
-        unset($validated['preferred_at']);
+        // Neither is a column on `trips`. `preferred_at` becomes
+        // `scheduled_at` below; the carrier is answered for by which company's
+        // tenancy the trip is written in, and `TripData` would refuse an
+        // attribute the model has no field for.
+        unset($validated['preferred_at'], $validated['carrier_id']);
 
         return TripData::fromArray([
             ...$validated,

@@ -1,4 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Router } from '@angular/router';
 import { map } from 'rxjs';
 
 import { BillingService } from '../../services/billing/billing.service';
@@ -7,6 +9,8 @@ import { Card } from '../../shared/card';
 import { Column, DataTable } from '../../shared/data-table';
 import { FilterBar, FilterOption } from '../../shared/filter-bar';
 import { fmt } from '../../shared/format';
+import { Icon } from '../../shared/icon';
+import { PaymentDialog } from '../../shared/payment-dialog';
 import { ListToolbar } from '../../shared/list-toolbar';
 import { invoiceSpec } from '../../services/billing/billing.form';
 import { recordList } from '../../shared/record-list';
@@ -18,11 +22,13 @@ type Direction = 'all' | 'receivable' | 'payable';
 @Component({
   selector: 'app-billing',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Card, DataTable, FilterBar, ListToolbar, ErrorState],
+  imports: [Card, DataTable, FilterBar, Icon, ListToolbar, ErrorState],
   templateUrl: './billing.page.html',
 })
 export class BillingPage {
   private readonly billingApi = inject(BillingService);
+  private readonly router = inject(Router);
+  private readonly payments = inject(PaymentDialog);
   private readonly spec = invoiceSpec();
 
   protected readonly list = recordList<Invoice>(this.spec, () =>
@@ -32,6 +38,49 @@ export class BillingPage {
   private readonly all = this.list.rows;
 
   protected readonly label = (i: Invoice) => i.number;
+
+  /**
+   * Money has arrived — record it against a document.
+   *
+   * This is how an invoice becomes paid. There is no status to set: `paid` and
+   * `partial` follow from the payments against a document, and the dropdown
+   * that used to offer them wrote the word with no money behind it. The dialog
+   * offers the documents that are still owed something, newest first.
+   */
+  protected recordPayment(): void {
+    this.payments.forAny((this.all() ?? []).filter((invoice) => invoice.balance_cents > 0));
+  }
+
+  constructor() {
+    // The figures on this page are derived from the payments, so a recorded
+    // one changes every card as well as the row.
+    this.payments.recorded.pipe(takeUntilDestroyed()).subscribe(() => this.list.refresh());
+  }
+
+  /**
+   * Open the printable document for one invoice.
+   *
+   * A page rather than a dialog — see `InvoicePage` for why — so this is a
+   * navigation and not a modal open.
+   */
+  protected openDocument(invoice: Invoice): void {
+    this.router.navigate(['/billing', invoice.id]);
+  }
+
+  /**
+   * Download the list as a spreadsheet.
+   *
+   * `window.location` rather than an HTTP call: the API serves the file as an
+   * attachment, so the browser has to be the thing that fetches it — an
+   * `HttpClient` request would land the CSV in memory with nothing to do with
+   * it. The direction filter goes along, because the export somebody wants is
+   * the list they are looking at.
+   */
+  protected exportList(): void {
+    const direction = this.direction();
+
+    window.location.assign(this.billingApi.exportUrl(direction === 'all' ? {} : { direction }));
+  }
 
   protected readonly direction = signal<Direction>('all');
 
@@ -59,27 +108,50 @@ export class BillingPage {
     return d === 'all' ? rows : rows.filter((r) => r.direction === d);
   });
 
-  private sum(pred: (i: Invoice) => boolean): number {
-    return (this.all() ?? []).filter(pred).reduce((t, i) => t + i.amount_cents, 0);
+  /**
+   * Totals are summed on the **balance**, not the face value.
+   *
+   * Two things now sit between what a document says and what is still owed:
+   * anything already paid against it, and the withholding tax the customer
+   * keeps back and remits on our behalf. Adding up `amount_cents` counted both
+   * as receivable — so a half-paid invoice looked entirely unpaid, and a
+   * withholding customer looked permanently short.
+   */
+  private sumBalance(pred: (i: Invoice) => boolean): number {
+    return (this.all() ?? []).filter(pred).reduce((t, i) => t + i.balance_cents, 0);
   }
 
-  // Outstanding means not yet settled. This used to read `!== 'delivered'`,
-  // because settling an invoice wrote the same word a closed-out haul does —
-  // so the two could not be told apart and "collected" was unanswerable.
+  private sumPaid(pred: (i: Invoice) => boolean): number {
+    return (this.all() ?? []).filter(pred).reduce((t, i) => t + i.paid_cents, 0);
+  }
+
+  /**
+   * Outstanding means anything still owed on it.
+   *
+   * `partial` belongs here beside pending and overdue: a document part-paid is
+   * still owed the rest, and leaving it out would drop the balance out of
+   * receivables the moment the first instalment landed.
+   */
+  private readonly unsettled = (i: Invoice): boolean => i.status !== 'paid';
+
   protected readonly receivable = computed(() =>
-    this.sum((i) => i.direction === 'receivable' && i.status !== 'paid'),
+    this.sumBalance((i) => i.direction === 'receivable' && this.unsettled(i)),
   );
 
   protected readonly payable = computed(() =>
-    this.sum((i) => i.direction === 'payable' && i.status !== 'paid'),
+    this.sumBalance((i) => i.direction === 'payable' && this.unsettled(i)),
   );
 
-  /** Money in, as against money merely billed. */
-  protected readonly collected = computed(() =>
-    this.sum((i) => i.direction === 'receivable' && i.status === 'paid'),
-  );
+  /**
+   * Money in, as against money merely billed.
+   *
+   * Summed from what each document has actually received rather than from the
+   * face value of the ones marked paid — which used to count the withheld
+   * portion as collected, though it never arrives.
+   */
+  protected readonly collected = computed(() => this.sumPaid((i) => i.direction === 'receivable'));
 
-  protected readonly overdue = computed(() => this.sum((i) => i.status === 'overdue'));
+  protected readonly overdue = computed(() => this.sumBalance((i) => i.status === 'overdue'));
 
   protected readonly fmt = fmt;
 
@@ -96,7 +168,40 @@ export class BillingPage {
     { label: 'Trip', kind: 'muted', value: (i) => i.trip_reference },
     { label: 'Issued', kind: 'num', value: (i) => fmt.date(i.issued_at) },
     { label: 'Due', kind: 'num', value: (i) => fmt.date(i.due_at) },
-    { label: 'Amount', kind: 'num', value: (i) => fmt.money(i.amount_cents, i.currency) },
+    {
+      /**
+       * What the document says, with the VAT inside it named underneath.
+       *
+       * The sub-line is only drawn where there is tax to explain — most
+       * payables and any zero-rated customer have none, and "VAT ₱0.00" is
+       * noise on every row of those.
+       */
+      label: 'Invoiced',
+      kind: 'num',
+      value: (i) => fmt.money(i.amount_cents, i.currency),
+      sub: (i) => (i.vat_cents > 0 ? `incl. VAT ${fmt.money(i.vat_cents, i.currency)}` : null),
+    },
+    {
+      /**
+       * What is still owed — the column somebody chasing money actually reads.
+       *
+       * The sub-line names the two reasons it differs from the invoiced
+       * figure, and they are different in kind: money that has arrived, and
+       * money that never will because the customer remits it to the BIR.
+       * Calling the second one "withheld" is what stops it reading as a debt.
+       */
+      label: 'Balance',
+      kind: 'num',
+      value: (i) => fmt.money(i.balance_cents, i.currency),
+      sub: (i) => {
+        const parts: string[] = [];
+        if (i.paid_cents > 0) parts.push(`paid ${fmt.money(i.paid_cents, i.currency)}`);
+        if (i.withholding_cents > 0)
+          parts.push(`withheld ${fmt.money(i.withholding_cents, i.currency)}`);
+
+        return parts.length ? parts.join(' · ') : null;
+      },
+    },
     { label: 'Status', kind: 'status', status: (i) => i.status },
   ];
 }

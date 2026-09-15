@@ -60,10 +60,22 @@ L.Icon.Default.imagePath = 'leaflet/';
           name="search"
           [size]="16"
           class="pointer-events-none absolute left-3 text-cr-ink-muted" />
+        <!--
+          Enter searches; it does not submit whatever form this picker happens
+          to be standing in.
+
+          The picker sits inside a form element on the registration page, and a
+          lone text input in a form means the browser submits it on Enter — so
+          looking for "Cagayan de Oro" would fire "Create company" against a
+          half-filled form and answer with a page of red. The search runs off
+          the input event and is debounced, so nothing is lost by stopping the
+          key.
+        -->
         <input
           type="search"
           [value]="term()"
           (input)="onSearch($any($event.target).value)"
+          (keydown.enter)="$event.preventDefault()"
           placeholder="Search a town, depot or landmark…"
           class="h-10 w-full rounded-control border border-cr-line bg-cr-surface pr-3 pl-9 text-[14px] placeholder:text-cr-ink-muted focus:border-cr-blue focus:outline-none" />
       </label>

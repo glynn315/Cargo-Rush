@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Vehicle\Models;
 
 use App\Domain\Shared\Enums\StatusValue;
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use Database\Factories\MaintenanceJobFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,7 +17,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class MaintenanceJob extends Model
 {
     /** @use HasFactory<MaintenanceJobFactory> */
-    use HasFactory, HasUlids, SoftDeletes;
+    use BelongsToCompany, HasFactory, HasUlids, SoftDeletes;
 
     protected $fillable = ['vehicle_id', 'kind', 'due_at', 'next_service_km', 'status'];
 

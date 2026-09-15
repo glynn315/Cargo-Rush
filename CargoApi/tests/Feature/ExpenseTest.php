@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Driver\Models\Driver;
 use App\Domain\Finance\Models\Expense;
 use App\Domain\Finance\Models\ExpenseCategory;
 use App\Domain\Finance\Models\LedgerEntry;
@@ -98,6 +99,66 @@ describe('filing an expense', function (): void {
         ($this->file)(['amount_cents' => 450.75])
             ->assertStatus(422)
             ->assertJsonValidationErrors('amount_cents');
+    });
+});
+
+describe('a driver on an expense', function (): void {
+    beforeEach(function (): void {
+        $this->driver = Driver::create([
+            'name' => 'Marco Reyes',
+            'licence_no' => 'N01-23-456789',
+            'licence_expiry' => '2029-01-01',
+        ]);
+    });
+
+    it('keeps the driver on spend a truck is carrying', function (): void {
+        $response = ($this->file)([
+            'truck_id' => $this->truck->id,
+            'driver_id' => $this->driver->id,
+        ])->assertCreated();
+
+        expect($response->json('data.driver_id'))->toBe($this->driver->id);
+        expect($response->json('data.driver_name'))->toBe('Marco Reyes');
+    });
+
+    it('drops a driver filed against overhead, who had no part in it', function (): void {
+        $response = ($this->file)([
+            'category_id' => $this->office->id,
+            'amount_cents' => 1_200_000,
+            'driver_id' => $this->driver->id,
+        ])->assertCreated();
+
+        expect($response->json('data.truck_id'))->toBeNull();
+        expect($response->json('data.driver_id'))->toBeNull();
+        expect(Expense::firstOrFail()->driver_id)->toBeNull();
+    });
+
+    it('takes the driver away when an expense is moved off its truck', function (): void {
+        $id = ($this->file)([
+            'truck_id' => $this->truck->id,
+            'driver_id' => $this->driver->id,
+        ])->json('data.id');
+
+        $response = $this->actingAs($this->accountant)
+            ->patchJson("/api/v1/expenses/$id", ['truck_id' => null])
+            ->assertOk();
+
+        expect($response->json('data.driver_id'))->toBeNull();
+        // And it is gone from the row, not just from the response.
+        expect(Expense::findOrFail($id)->driver_id)->toBeNull();
+    });
+
+    it('leaves a driver alone on a patch that says nothing about the truck', function (): void {
+        $id = ($this->file)([
+            'truck_id' => $this->truck->id,
+            'driver_id' => $this->driver->id,
+        ])->json('data.id');
+
+        $response = $this->actingAs($this->accountant)
+            ->patchJson("/api/v1/expenses/$id", ['payee' => 'Aling Nena'])
+            ->assertOk();
+
+        expect($response->json('data.driver_id'))->toBe($this->driver->id);
     });
 });
 

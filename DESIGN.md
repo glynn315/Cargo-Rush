@@ -460,6 +460,12 @@ Domain/<Module>/
 `Repository` base, `ApiController` (which owns the section 7.1 envelope), and `ApiResource`
 (which owns ISO timestamps).
 
+`Domain/Tenancy/` is the other module every other one depends on, and the only one that is not a
+screen. It owns the `Company`, the `Tenant` resolver, the global scope and the trait that put
+`company_id` on every write, the middleware that binds a request to a company, and registration.
+Nothing outside it queries `companies` — the rest of the application asks `Tenant` which company
+is in force and never goes looking for one. See section 7.0.
+
 The dependency direction is one-way and worth stating plainly:
 
 **Controller → Service → Repository → Model**
@@ -482,6 +488,10 @@ Laravel would otherwise infer — route-model binding and factory discovery — 
 | --- | --- | --- |
 | The two workbook formulas | `Domain/Finance/Services/FinanceService` | Profitability and Quarterly Summary are one roll-up over two ranges; two copies would drift |
 | A trip's reference | `Trip::booted()` | Assigning it in a service leaves a window where a row exists with no reference |
+| Whether a job needs a `drivers` row | `Position::drives()` — its default role is the driver's | The same decision twice: every driver endpoint is scoped to a `drivers` row, so *needs the handset* and *needs the record* are one fact, and a second flag beside the role could disagree with it |
+| A position is a **position**, not a caption | `gps_pings.lat` / `.lng`, `decimal(10,7)` | The handset used to stringify its coordinates into `location`, so nothing could plot, filter or index them. `location` stays as what a person reads; the pair is what a map draws |
+| Which company a row belongs to | `BelongsToCompany` + `CompanyScope` on the model | Thirty repositories each remembering to filter is thirty chances to leak one company's books into another's |
+| A logo's size and format | `LogoStore`, on upload | Two clients each resizing before sending is two copies of a rule neither owns — and the server would still have to trust the result |
 | `good_to_go` on an inspection | `InspectionService::isGoodToGo()` | A driver in a hurry must not be able to post a pass over a failed brake check |
 | Overdue | derived, then reconciled on a schedule | It is a fact about the clock; a stored status goes stale the moment nothing walks the table |
 | Status → colour | `shared/status.ts` (web) / `constants/status.ts` (mobile) | The API returns a string; a hex value never crosses the wire |
@@ -525,6 +535,62 @@ The mapping is mechanical, so do not invent mobile-only structure.
 
 The API's job is to make the shell data-driven. Three contracts matter.
 
+### 7.0 Tenancy — one deployment, many hauliers
+
+Every row in this system belongs to a **company**, and no company can reach another's. That is
+the first thing to know about the backend, because it is a property of every query rather than a
+feature of any one module.
+
+**How a request learns which company it is.** Off the authenticated account, and off nothing else.
+`BindTenant` runs immediately inside `auth:sanctum` on the whole API group, reads
+`$request->user()->company`, and puts it in force for the rest of the request. There is no header,
+no query parameter and no path segment that names a company — **a client is never asked which
+company it is, so there is nothing for it to get wrong or to lie about.** A payload carrying
+`company_id` is ignored: the column is not fillable on any model.
+
+**How it is enforced.** Two halves, both in the model layer, so no repository has to remember:
+
+| | What it does | Where |
+| --- | --- | --- |
+| `CompanyScope` | A global scope adding `where company_id = ?` to every query on a tenant model | `Domain/Tenancy/Scopes` |
+| `BelongsToCompany` | Stamps `company_id` on insert, and refuses the insert when nothing is in force | `Domain/Tenancy/Models/Concerns` |
+
+Behind both, `company_id` is **`NOT NULL` with a foreign key** on all 28 tenant tables. The scope
+and the stamp are code a future change could route around; the constraint is what turns such a
+change into a failed insert rather than a row nobody owns.
+
+**Every module table carries its own `company_id`**, including the ones reachable through a
+parent — `gps_pings` through its trip, `delivery_logs` through the same trip again. Each module
+queries its own table directly, so scoping through a relation would mean thirty repositories each
+remembering to join, and the one that forgets is a breach. A column on the row is filtered by one
+scope that nothing opts out of by accident.
+
+**What is the platform's and what is each company's:**
+
+| Company's own | The platform's, shared |
+| --- | --- |
+| `roles`, `positions`, `expense_categories` | `permissions` — the vocabulary code checks for |
+| Everything operational: trips, vehicles, drivers, customers, the ledger, HR | `nav_items` — the list of modules this application has |
+
+A permission invented by a company would gate nothing and a nav row would lead nowhere; what a
+firm calls its jobs and which of them opens the ledger is exactly what every office does
+differently. Registering a company lays down its own copy of the starting roles, positions and
+categories (`CompanyProvisioner`, which runs the same three seeders inside the new tenant).
+
+**Uniqueness moved with the data.** A plate, a licence number, a payroll number, an invoice number
+and a trip reference are unique **within a company**. Two hauliers both running a "Truck 1" and
+both starting their references at `CR-24801` is the normal case, not a collision — and a reference
+is the only id a human in this system reads, so one that starts in the middle is one nobody
+trusts. The exception is **`users.email`, which stays unique system-wide**: an address identifies
+exactly one account, which is what lets the login form stay two fields and still know which
+company to open.
+
+**Outside a request.** No company in force means no filtering, which is the useful default on the
+console — the nightly sweeps are the platform's work. But those sweeps *write* (a released trip
+raises a notification), so each runs company by company through `RunsPerCompany`, and one
+company's failure is reported without stopping the rest. `Tenant::use()` is how anything else says
+which company it is acting for; it always restores what it found.
+
 ### 7.1 Envelope
 
 Every JSON response uses the same shape. Clients never branch on endpoint-specific shapes.
@@ -556,6 +622,10 @@ Every JSON response uses the same shape. Clients never branch on endpoint-specif
   "data": {
     "id": 1,
     "name": "Juan Dela Cruz",
+    "company_id": "01m1tv0nprj8ysw23p7qpy86kp",
+    "company_name": "Southern Freight Services",
+    "company_code": "southern-freight-services",
+    "company_logo_url": "http://localhost:8000/storage/companies/01m1tx26bz.png",
     "role": "administrator",
     "role_label": "Administrator",
     "avatar_url": null,
@@ -566,6 +636,29 @@ Every JSON response uses the same shape. Clients never branch on endpoint-specif
 
 `role` is the machine enum, `role_label` is the display string (the client uppercases it),
 `avatar_url: null` means the client renders initials.
+
+`company_id`, `company_name` and `company_code` are never null, for any role — a driver has no
+customer and a customer has no licence, but every account belongs to a company. Both shells name
+it beside the wordmark, because a screen that says only "Cargo Rush" cannot answer *whose fleet am
+I looking at*. **Clients do not scope anything with it**: every list is already filtered
+server-side (section 7.0), and an id sent back would be ignored.
+
+`company_logo_url` is **a 64×64 PNG or null**, and both halves of that are a contract:
+
+- **64×64, always**, whatever was uploaded. `LogoStore` decodes every upload, centre-crops it to a
+  square, resamples it and re-encodes as PNG — so no client has to handle a 3:1 banner in a square
+  box or ship four megabytes to draw a thumbnail. It is cropped rather than squashed, and PNG
+  rather than the source format, because a logo usually has a transparent background and JPEG
+  would put a box behind it. Decoding and re-encoding is also what stops a file being written to
+  disk that was only *called* an image by whoever sent it.
+- **64 is 32 at twice the density.** The sidebar draws it at 32px; a file stored at exactly its
+  display size is soft on every screen made in the last decade.
+- **Null means render the initials** — "SF" for Southern Freight — the same fallback the user chip
+  already makes for an account with no avatar. A company with no logo is ordinary; most register
+  without one.
+
+Like every stored file in this system, only the **path** is kept and the URL is derived on read,
+so moving the install does not orphan every company's mark.
 
 ### 7.3 Navigation endpoint — drives the sidebar and tab bar
 
@@ -620,12 +713,48 @@ ledger row and the receivable both copy it rather than re-deriving it, so all
 three are the same number. Sending one is a negotiated rate, not an override of
 a total, and is honoured.
 
+**An invoice total is not what anybody pays.** A Philippine freight invoice carries four figures,
+and the system used to keep one:
+
+```
+  net                      the haul, priced from the tariff
++ VAT      (12%)           charged on, remitted by us
+= amount                   what the document says
+- withholding (2% of gross) kept back by the customer, remitted by them
+= due                      what lands in the bank
+```
+
+Withholding is on the **gross**, VAT included — that is how the BIR computes it, and applying it to
+the net instead understates the deduction on every invoice a business ever raises. All of it is
+**stored, with the rates that produced it**, for the same reason a trip's price is stored: an
+invoice is a promise made on a date, and rates change by statute. Three parties hold parts of the
+answer — the statute sets the rates, the company decides whether it charges VAT at all, and the
+customer decides their treatment and whether they withhold — which is why `TaxService` owns it
+rather than the invoice.
+
+**Being paid is an event, not a status.** `payments` is money that moved, with its own date,
+method and bank reference; `payment_allocations` is where it was put. That split is what makes a
+part payment and a one-cheque-four-invoices settlement expressible, and both are what customers
+actually do. An invoice's `paid`/`partial` status and its `paid_at` are **derived from the
+allocations** by `PaymentService` — the same arrangement the overdue sweep uses — so no document
+can read as paid with nothing underneath it.
+
 **A DTO knows what it was not told.** `Data::persistable()` returns only the keys the caller
 actually sent. On a create that lets column defaults stand; on a `PATCH` it means sending
 `helper_id: null` really does clear the helper, while leaving it out leaves it alone. Without
 that distinction one of those two cases is always broken.
 
 ### 7.5 Auth, both ways
+
+**`POST /api/v1/register` is the way onto the platform**, and the only public write there is. It
+takes a company and the first person in it, creates both in one transaction — with that company's
+roles, positions and categories laid down between them — and answers **already signed in**, in
+exactly the shape login does. One transaction because every partial outcome is worse than a failed
+registration: a company with no administrator is a firm locked out of its own account, and its
+owner has no way to ask for help because they have not got in yet.
+
+Whoever registers is the **administrator**, necessarily: they are the only person in the company,
+so any narrower role would leave nobody able to create the second account.
 
 `POST /api/v1/login` takes an optional `device_name`:
 
@@ -651,12 +780,15 @@ way to know whether it is still good.
 
 | Group | Route | Notes |
 | --- | --- | --- |
-| Identity | `POST login`, `POST logout`, `GET me`, `GET navigation` | `?client=mobile` switches the nav to the handset tabs, filtered by permission so a driver and a customer get different ones |
+| Tenancy | `POST register` | Public. Company + first account + that company's configuration, in one transaction, answering signed in |
+| Passwords | `POST forgot-password`, `POST reset-password`, `POST me/password` | The first two are public and throttled on the `login` limiter. **Neither knows a company** — `password_reset_tokens` is keyed by address, and an address belongs to one account system-wide, so the token names the account and the account names the company. `forgot-password` answers identically for a known and an unknown address, or it becomes a way to enumerate who is on the platform. A reset revokes every device token; a change (which requires the current password) keeps them |
+| Company | `GET company`, `POST company/logo`, `DELETE company/logo` | `company.manage`. **No id in any path** — scoped to the account, like the driver and customer routes. The upload is normalised to a 64×64 PNG; the delete answers with the company rather than 204, because the shell has to draw it either way |
+| Identity | `POST login`, `POST logout`, `GET me`, `GET navigation` | `?client=mobile` switches the nav to the handset tabs, filtered by permission so a driver and a customer get different ones. `logout` is the one authenticated route outside the company group, so a suspended firm's people can still get out |
 | Dashboard | `GET dashboard/{kpis,fleet,deliveries,activity,receivables}` | Five calls, so a slow aggregate cannot hold up the tiles that were ready |
 | Trips | `apiResource trips` + `{trip}/confirm`, `{trip}/dispatch`, `{trip}/complete` | `confirm` names the crew, the unit and the time; `assigned` follows from them |
 | Driver-scoped | `GET trips/{current,pending,upcoming,cargo}` | No id in the path — scoped to the token |
 | Customer-scoped | `GET portal/{summary,requests,invoices}`, `POST portal/requests`, `GET portal/requests/{trip}` | No customer id in any path — scoped to the token, exactly as the driver routes are |
-| GPS | `GET gps`, `POST gps/pings`, `GET gps/trips/{trip}/tracking` | Handset writes, back office reads |
+| GPS | `GET gps`, `POST gps/pings`, `GET gps/trips/{trip}/tracking` | Handset writes, back office reads. A ping carries `lat`/`lng` as **numbers** beside the `location` string — see below. `tracking` returns `current`, a `path` ready for a polyline, and the trip's `endpoints` |
 | Dispatch | `GET dispatch`, `POST dispatch/{dispatch}/arrive` | Records are born with a trip |
 | Delivery | `GET delivery-logs`, `GET delivery-logs/report`, `POST {delivery}/proof` | Proof is multipart; the `POD-` reference is assigned, never sent |
 | Vehicles | `apiResource vehicles` + `{vehicle}/status`, `{vehicle}/maintenance` | |
@@ -664,7 +796,9 @@ way to know whether it is still good.
 | Fuel | `apiResource fuel` + `GET fuel/budget` | Spend and projection are summed, not stored |
 | Finance | `GET finance/{trucks,routes,profitability,summary}`, `ledger` CRUD | Profitability and summary are one roll-up, two ranges |
 | Customers | `apiResource customers` + `{customer}/history` | Creating a customer creates its portal login (`role=customer`, the configured starting password); the create response says that password once and no read repeats it |
-| Billing | `apiResource billing` + `{invoice}/settle`, `GET billing/totals` | Settling writes `paid`; a delivery raises its own receivable |
+| Billing | `apiResource billing` + `{invoice}/settle`, `GET billing/totals`, `GET billing/aging` | An invoice carries **five figures**: `net + vat = amount`, and `amount - withholding = due`. Settling records a payment for the **balance** and derives the status from it. `aging` buckets what is outstanding by how late it is |
+| Payments | `GET payments`, `POST payments`, `DELETE payments/{payment}` | Money as its own record, applied to invoices through allocations — so one cheque can settle four documents and one document can be paid in instalments. `allocations` may be empty: money on account before there is a bill for it |
+| HR | `apiResource employees` + `{employee}/account`, `{employee}/role`, `{employee}/modules` | Registering takes a **licence**, not a `driver_id`: the position decides whether one is asked for, and the service finds or opens the `drivers` row from the number. There is no field naming a driver record |
 | Support | `apiResource incidents`, `GET notifications` + read / read-all | |
 | Inspection | `GET inspections/checklist`, `GET/POST inspections`, `.../maintenance` | Mobile-only capture |
 ---

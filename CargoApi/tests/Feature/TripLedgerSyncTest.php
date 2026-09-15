@@ -55,6 +55,8 @@ beforeEach(function (): void {
             ...$overrides,
         ])->json('data.id');
 
+        // A unit does not roll without a passing pre-trip check.
+        $this->passPreTripCheck($id);
         $this->actingAs($this->marco)->postJson("/api/v1/trips/{$id}/start", [])->assertOk();
         $this->actingAs($this->marco)
             ->postJson('/api/v1/trips/current/deliver', ['receiver_name' => $receiver])
@@ -215,6 +217,8 @@ it('files nothing for a run with no unit assigned', function (): void {
         'status' => StatusValue::Assigned->value,
     ])->json('data.id');
 
+    // A unit does not roll without a passing pre-trip check.
+    $this->passPreTripCheck($id);
     $this->actingAs($this->marco)->postJson("/api/v1/trips/{$id}/start", [])->assertOk();
     $this->actingAs($this->marco)
         ->postJson('/api/v1/trips/current/deliver', ['receiver_name' => 'L. Tan'])

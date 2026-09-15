@@ -52,6 +52,26 @@ export function asPoint(location: TripLocation): GeoPoint | null {
     : null;
 }
 
+/**
+ * A route drawn on a map: the line, and what it adds up to.
+ *
+ * `points` are `[lat, lng]` pairs in the order they are driven — the shape
+ * Leaflet takes, and the order everything else in this app speaks (the routing
+ * provider is the one place that wants them the other way round).
+ *
+ * `source` is not decoration. `road` is a route a vehicle could actually
+ * drive; `straight` is the two points joined, which is what a phone with no
+ * signal gets, and the screen says which it is looking at rather than passing
+ * one off as the other.
+ */
+export interface RouteLine {
+  points: [number, number][];
+  distance_m: number;
+  /** Driving time in seconds. Null on a straight line — there is no road to time. */
+  duration_s: number | null;
+  source: 'road' | 'straight';
+}
+
 /** What an unnameable point is called: the coordinates themselves. */
 export function coordinateLabel(lat: number, lng: number): string {
   return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;

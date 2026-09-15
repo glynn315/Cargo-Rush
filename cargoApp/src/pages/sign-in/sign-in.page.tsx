@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Wordmark } from '@/components/ui/wordmark';
 import { Brand, Hit, Radius, Spacing } from '@/constants/theme';
+import { SignUpPage } from '@/pages/sign-up/sign-up.page';
 import { apiBaseUrl, ApiRequestError } from '@/services/shared/api.service';
 import { useSession } from '@/services/identity/session';
 
@@ -23,10 +24,27 @@ import { useSession } from '@/services/identity/session';
  * Shown instead of the tabs when there is no session, rather than as a screen
  * inside them: a driver who is not signed in has no dashboard to go back to,
  * and a tab bar over a locked app is a set of dead ends.
+ *
+ * It holds the sign-up screen rather than routing to it, for the same reason.
+ * `expo-router` is not mounted until there is a session — the tabs *are* the
+ * router — so the two unauthenticated screens swap here, on one piece of local
+ * state. Which also gets the back button right for free: there is nowhere else
+ * to go back to.
  */
 export function SignInPage() {
   const insets = useSafeAreaInsets();
   const { signIn } = useSession();
+
+  /**
+   * Signing in, or signing up.
+   *
+   * Drivers and office staff only ever see the first: their accounts are made
+   * for them. The second signs up a **customer** — somebody who has arrived at
+   * the app with a load and no haulier, which is the one account this platform
+   * lets a person create for themselves. Registering a *company* is the web's
+   * job, and is nothing like the same form.
+   */
+  const [signingUp, setSigningUp] = useState(false);
 
   const [email, setEmail] = useState('');
   const [secret, setSecret] = useState('');
@@ -34,6 +52,8 @@ export function SignInPage() {
   const [failure, setFailure] = useState<string | null>(null);
 
   const ready = email.trim().length > 0 && secret.length > 0;
+
+  if (signingUp) return <SignUpPage onBack={() => setSigningUp(false)} />;
 
   const submit = async () => {
     if (!ready || busy) return;
@@ -119,6 +139,23 @@ export function SignInPage() {
             ) : (
               <Text style={styles.submitText}>Sign in</Text>
             )}
+          </Pressable>
+        </View>
+
+        {/* The other way in, and the only account anybody creates for
+            themselves. A driver's and an office account are made for them, so
+            this speaks only to the person it is for: somebody with a load and
+            nobody carrying it yet. */}
+        <View style={styles.signUp}>
+          <Text style={styles.signUpText}>
+            Need a delivery? Sign up as a customer and choose a carrier near you.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Create a customer account"
+            onPress={() => setSigningUp(true)}
+            style={styles.signUpBtn}>
+            <Text style={styles.signUpBtnText}>Create a customer account</Text>
           </Pressable>
         </View>
 
@@ -218,6 +255,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   submitText: { color: Brand.surface, fontSize: 15, fontWeight: '600' },
+
+  signUp: { marginTop: Spacing.four, alignItems: 'center', gap: Spacing.two },
+  signUpText: { fontSize: 13, color: Brand.inkMuted, textAlign: 'center' },
+  signUpBtn: {
+    minHeight: Hit.min,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.four,
+    borderRadius: Radius.control,
+    borderWidth: 1,
+    borderColor: Brand.blue,
+    backgroundColor: Brand.surface,
+  },
+  signUpBtnText: { fontSize: 14, fontWeight: '600', color: Brand.blue },
 
   footnote: {
     marginTop: Spacing.four,

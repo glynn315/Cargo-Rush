@@ -7,6 +7,44 @@ import { Timestamped } from '../shared/envelope.model';
  * The related records arrive as names as well as ids: a table column prints
  * `driver_name`, and the id is there for the edit form.
  */
+/**
+ * One line of the pre-trip check as the driver answered it.
+ *
+ * The label comes from the API rather than this app, so a check read back
+ * months later says what it said on the day — and `critical` is why a failed
+ * coolant is advisory while a failed brake holds the unit in the yard.
+ */
+export interface TripCheckItem {
+  key: string;
+  label: string;
+  hint: string;
+  /** Null for an item that was not on the checklist when this was answered. */
+  passed: boolean | null;
+  critical: boolean;
+}
+
+/**
+ * Where a run's pre-trip check stands.
+ *
+ * Captured on the handset and read here: the office never records one
+ * (DESIGN.md section 5.4). A run cannot start without a pass, so anything in
+ * transit or delivered carries the record of the truck being looked over at the
+ * gate — which is what makes this worth showing on the board rather than only
+ * in the inspections log.
+ */
+export interface TripInspection {
+  /** True while the run is confirmed and has not left: the check is still due. */
+  required: boolean;
+  passed: boolean;
+  inspected_at: string | null;
+  checked_by: string | null;
+  notes: string | null;
+  items: TripCheckItem[];
+  failures: string[];
+  total_items: number;
+  passed_items: number;
+}
+
 export interface Trip extends Timestamped {
   id: string;
   reference: string;
@@ -47,6 +85,15 @@ export interface Trip extends Timestamped {
   helper_name: string | null;
   vehicle_id: string | null;
   vehicle_plate: string | null;
+
+  /**
+   * The pre-trip check on this run.
+   *
+   * Read-only here, like everything the handset captures. A confirmed run with
+   * `passed: false` is a unit that has not been cleared to leave — which is the
+   * one thing on the board that explains a driver sitting in a yard.
+   */
+  inspection: TripInspection;
 
   status: StatusValue;
   pickup_place: string | null;

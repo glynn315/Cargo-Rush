@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Inspection\Models;
 
 use App\Domain\Driver\Models\Driver;
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use App\Domain\Trip\Models\Trip;
 use App\Domain\Vehicle\Models\Vehicle;
 use Database\Factories\InspectionFactory;
@@ -20,7 +21,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Inspection extends Model
 {
     /** @use HasFactory<InspectionFactory> */
-    use HasFactory, HasUlids;
+    use BelongsToCompany, HasFactory, HasUlids;
 
     protected $fillable = [
         'trip_id', 'vehicle_id', 'driver_id', 'results',

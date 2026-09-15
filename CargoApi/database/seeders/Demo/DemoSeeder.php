@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Database\Seeders\Demo;
 
 use App\Domain\Notification\Models\NotificationItem;
+use Database\Seeders\Concerns\SeedsIntoACompany;
 use Illuminate\Database\Seeder;
 
 /**
@@ -22,16 +23,28 @@ use Illuminate\Database\Seeder;
  */
 class DemoSeeder extends Seeder
 {
+    use SeedsIntoACompany;
+
     public function run(): void
     {
-        $this->call([
-            FleetSeeder::class,
-            OperationsSeeder::class,
-            MoneySeeder::class,
-            LedgerSeeder::class,
-        ]);
+        // Enters the company once for the whole walkthrough. Each of the four
+        // below enters it again on its own account — nesting costs nothing and
+        // is what lets any of them be run alone.
+        $this->intoCompany(function (): void {
+            $this->call([
+                FleetSeeder::class,
+                OperationsSeeder::class,
+                MoneySeeder::class,
+                LedgerSeeder::class,
+                // Last, and the only one that writes outside the demo company:
+                // it pins this company's yard and puts two neighbouring
+                // hauliers on the platform, so the carrier list a customer
+                // picks from is a choice rather than a single card.
+                CarrierSeeder::class,
+            ]);
 
-        $this->notifications();
+            $this->notifications();
+        });
     }
 
     /**

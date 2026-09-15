@@ -4,7 +4,7 @@ import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } 
 
 import { Field } from './field';
 import { Modal } from './modal';
-import { FieldSpec } from './record-form-spec';
+import { FieldSpec, RecordSpec } from './record-form-spec';
 import { RecordDialog } from './record-dialog';
 
 /**
@@ -54,10 +54,34 @@ export class RecordForm {
     return record ? spec.title(record) : `Add a ${spec.noun} to the system`;
   });
 
+  /**
+   * The form's current values, mirrored into a signal.
+   *
+   * `FormGroup` is not reactive to Angular's signal graph, so `visibleFields`
+   * below cannot be computed from it directly — a field whose visibility
+   * depends on another field's value would never re-evaluate.
+   */
+  private readonly values = signal<Record<string, unknown>>({});
+
+  /**
+   * The fields actually on screen right now.
+   *
+   * A spec without any `showWhen` gets its whole list back, which is all but
+   * one of them.
+   */
+  protected readonly visibleFields = computed(() => {
+    const spec = this.spec();
+    if (spec === null) return [];
+
+    const values = this.values();
+
+    return spec.fields.filter((field) => field.showWhen?.(values) ?? true);
+  });
+
   constructor() {
     // Rebuilt whenever the dialog opens, because the next module's fields are
     // a different set of controls, not the same ones with new values.
-    effect(() => {
+    effect((onCleanup) => {
       if (!this.open()) return;
 
       const spec = this.spec();
@@ -69,15 +93,52 @@ export class RecordForm {
       const controls: Record<string, FormControl> = {};
 
       for (const field of spec.fields) {
-        controls[field.key] = new FormControl(
-          values[field.key] ?? this.blankFor(field),
-          this.validatorsFor(field),
-        );
+        controls[field.key] = new FormControl(values[field.key] ?? this.blankFor(field));
       }
 
-      this.form.set(this.fb.group(controls));
+      const group = this.fb.group(controls);
+
+      this.form.set(group);
+      this.values.set(group.getRawValue());
+      this.applyValidators(spec, group);
+
+      // Visibility can depend on any value, so the mirror and the validators
+      // are refreshed on every change rather than only on the fields a spec
+      // happens to name. Cheap for a form of this size, and it means a spec
+      // does not have to declare what its `showWhen` reads.
+      const changes = group.valueChanges.subscribe(() => {
+        this.values.set(group.getRawValue());
+        this.applyValidators(spec, group);
+      });
+
+      onCleanup(() => changes.unsubscribe());
+
       this.failure.set(null);
     });
+  }
+
+  /**
+   * Validators follow visibility.
+   *
+   * A hidden `required` field would be invalid with no way for anybody to fix
+   * it — the save button would simply stop working, and the field explaining
+   * why is not on screen. So a field that is not shown holds no rules.
+   *
+   * `emitEvent: false` matters: this runs *from* `valueChanges`, and
+   * re-emitting would loop.
+   */
+  private applyValidators(spec: RecordSpec, group: FormGroup): void {
+    const values = group.getRawValue();
+
+    for (const field of spec.fields) {
+      const control = group.get(field.key);
+      if (!control) continue;
+
+      const shown = field.showWhen?.(values) ?? true;
+
+      control.setValidators(shown ? this.validatorsFor(field) : []);
+      control.updateValueAndValidity({ emitEvent: false });
+    }
   }
 
   /** Options are resolved per open, so a select can hold rows fetched since. */

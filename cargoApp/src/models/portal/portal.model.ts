@@ -24,6 +24,31 @@ export interface PortalSummary {
   /** Settled. Money the business has actually received from them. */
   successful_payment_cents: number;
   currency: string;
+  /**
+   * The same figures again, per haulier.
+   *
+   * One entry for a customer the office added — they have one carrier and will
+   * only ever have one. Several for a shipper who signed themselves up and has
+   * sent with more than one firm, which is why the totals above are worth
+   * having: "is anything of mine on the road" is one question, and "who do I
+   * owe" is a different one that needs a name attached.
+   */
+  carriers: PortalCarrierFigures[];
+}
+
+/** One haulier's slice of the home screen. */
+export interface PortalCarrierFigures {
+  /** The company id — what a request's `carrier_id` would be. */
+  id: string;
+  name: string;
+  /** This shipper's `customers` row in that company's books. */
+  customer_id: string;
+  awaiting_confirmation: number;
+  scheduled: number;
+  in_transit: number;
+  delivered: number;
+  pending_payment_cents: number;
+  successful_payment_cents: number;
 }
 
 /**
@@ -39,6 +64,15 @@ export interface PortalSummary {
  * morning, the fleet says whether Tuesday morning is possible.
  */
 export interface DeliveryRequestPayload {
+  /**
+   * Which haulier is being asked, from the carrier list.
+   *
+   * Absent means "my usual one", which is what a customer the office put on the
+   * books always means and what every screen sent before the list existed. An
+   * account that cannot choose is refused outright if it sends somebody else's
+   * id, rather than having the load quietly filed with their own carrier.
+   */
+  carrier_id?: string;
   origin: string;
   destination: string;
   /**
@@ -66,15 +100,71 @@ export interface DeliveryRequestPayload {
 }
 
 /** A receivable, as the customer reads it. */
+/** One payment against an invoice, as much of it as landed there. */
+export interface PortalInvoicePayment {
+  paid_on: string | null;
+  method: string | null;
+  /** `bank_transfer` as somebody would say it. */
+  method_label: string | null;
+  reference: string | null;
+  /** The allocated share — one transfer can settle three invoices. */
+  amount_cents: number;
+}
+
 export interface PortalInvoice {
   id: string;
   number: string;
-  trip_reference: string | null;
   issued_at: string;
   due_at: string;
-  amount_cents: number;
   currency: string;
   status: StatusValue;
   /** When it was settled. Null while it is still owed. */
   paid_at: string | null;
+
+  /**
+   * The liquidation — how the total is arrived at.
+   *
+   *     hauling charge + VAT = invoice total
+   *     invoice total − withholding = amount payable
+   *     amount payable − received = balance
+   *
+   * All of it, because a customer reading a figure on a phone has nothing to
+   * check it against otherwise. The rates are the ones frozen on the document
+   * when it was issued, not today's.
+   */
+  net_amount_cents: number;
+  vat_cents: number;
+  amount_cents: number;
+  withholding_cents: number;
+  due_cents: number;
+  paid_cents: number;
+  balance_cents: number;
+  vat_rate_bp: number;
+  withholding_rate_bp: number;
+
+  /** Every payment received against it, oldest first. */
+  payments: PortalInvoicePayment[];
+
+  /**
+   * The haul it is for, and the day they asked for it.
+   *
+   * `requested_at` is what the list is ordered by: a customer looks for "the
+   * Silway run" by when they sent it, not by the day an office raised the
+   * paperwork.
+   */
+  trip_reference: string | null;
+  trip_origin: string | null;
+  trip_destination: string | null;
+  trip_cargo: string | null;
+  trip_weight_kg: number | null;
+  trip_status: StatusValue | null;
+  requested_at: string;
+  /**
+   * Who is owed.
+   *
+   * A shipper using two hauliers has two sets of receivables, and "INV-2026-0440
+   * is overdue" is not actionable until you know which office to pay.
+   */
+  carrier_id: string | null;
+  carrier: string | null;
 }

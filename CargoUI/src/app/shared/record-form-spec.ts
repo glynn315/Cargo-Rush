@@ -31,6 +31,21 @@ export interface FieldSpec {
   max?: number;
   /** Half width on a two-column form. Defaults to half; `true` spans both. */
   wide?: boolean;
+  /**
+   * Show this field only when the rest of the form says to.
+   *
+   * Absent means always, which is every field but a handful. Registering an
+   * employee is the case that needed it: a licence number is asked for when
+   * the chosen position drives and is meaningless otherwise, and putting it on
+   * the form regardless asks a mechanic for a licence they were never going to
+   * give.
+   *
+   * A hidden field keeps its control but drops its validators, so a `required`
+   * one that is not on screen cannot silently block the save. Its value is
+   * still submitted — blank, which every payload builder here drops — so
+   * hiding a field is not the same as clearing what is behind it.
+   */
+  showWhen?: (values: Record<string, unknown>) => boolean;
 }
 
 /**

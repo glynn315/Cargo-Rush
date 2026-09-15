@@ -12,6 +12,7 @@ use App\Domain\Delivery\Models\DeliveryLog;
 use App\Domain\Delivery\Services\ProofStore;
 use App\Domain\Dispatch\Models\DispatchRecord;
 use App\Domain\Finance\Services\FinanceService;
+use App\Domain\Inspection\Services\InspectionService;
 use App\Domain\Notification\Services\NotificationService;
 use App\Domain\Shared\Enums\Role;
 use App\Domain\Shared\Enums\StatusValue;
@@ -58,6 +59,10 @@ class TripService
         private readonly PricingService $pricing,
         private readonly BillingService $billing,
         private readonly ProofStore $proofs,
+        // What decides whether a unit may leave. Injected rather than queried
+        // here, so the rule about what counts as a passing check lives in one
+        // place — see `mustBeCleared()`.
+        private readonly InspectionService $inspections,
     ) {}
 
     /**
@@ -468,11 +473,57 @@ class TripService
             'Finish the run you are on before starting another.',
         );
 
+        $this->mustBeCleared($trip);
+
         // The handset knows where it is; the booking only knows where it was
         // meant to leave from. Either is better than an empty column.
         $this->dispatch($trip, $location ?? $trip->pickup_place ?? $trip->origin);
 
         return $trip->refresh();
+    }
+
+    /**
+     * No pre-trip check, no departure.
+     *
+     * The last gate before a unit rolls, and the one that is about the truck
+     * rather than about the paperwork. DESIGN.md section 5.2 has the checklist
+     * on the handset from the start; what it did not have was any consequence —
+     * a driver could skip it and leave, which made it a form rather than a
+     * check. Now the run does not start until the unit has passed one.
+     *
+     * Enforced here rather than in the controller so it holds for every way in:
+     * the handset's Start button today, and the office starting a run on a
+     * driver's behalf if that is ever added. `InspectionService` decides what
+     * counts as a passing check — and it will not pass a unit on a failed brake
+     * check however the form was filled in.
+     *
+     * The message is written to be read on a phone at a yard gate: it says what
+     * is missing and where to do it, because a driver who is told "422" rings
+     * the office and a driver who is told to run the checklist runs the
+     * checklist.
+     */
+    private function mustBeCleared(Trip $trip): void
+    {
+        // Off for an install that records its checks somewhere else, or is
+        // still rolling the handset out — see `config/cargo.php`. The check is
+        // still recorded and still shown either way; this decides only whether
+        // it holds the unit.
+        if (! config('cargo.inspection.required_before_start', true)) {
+            return;
+        }
+
+        if ($this->inspections->clearanceFor($trip) !== null) {
+            return;
+        }
+
+        $attempt = $trip->latestInspection;
+
+        abort(422, $attempt === null
+            ? 'Run the pre-trip check on Inspect before you leave — the unit has not been checked for this run.'
+            : sprintf(
+                'This unit is held on its pre-trip check: %s. Get it seen to, then check it again.',
+                implode(', ', $attempt->failures()) ?: 'the checklist was not finished',
+            ));
     }
 
     /**

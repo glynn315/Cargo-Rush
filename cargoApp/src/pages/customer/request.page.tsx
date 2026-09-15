@@ -2,10 +2,13 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { BLANK_LOCATION, TripLocation, isPinned } from '@/models/geo/geo.model';
+import { Carrier } from '@/models/carrier/carrier.model';
+import { BLANK_LOCATION, GeoPoint, TripLocation, isPinned } from '@/models/geo/geo.model';
 import { Trip } from '@/models/trip/trip.model';
 import { portalService } from '@/services/portal/portal.service';
+import { useSession } from '@/services/identity/session';
 import { ApiRequestError } from '@/services/shared/api.service';
+import { CarrierPicker } from '@/components/carrier-picker';
 import { LocationField } from '@/components/location-field';
 import { Screen } from '@/components/screen';
 import { Icon } from '@/components/ui/icon';
@@ -22,6 +25,13 @@ import { fmt } from '@/constants/format';
  * office's, and putting them on this form would either ask the customer to
  * guess or let a request arrive already assigned — which would skip the
  * confirmation step it exists to ask for.
+ *
+ * A sixth question comes first for a firm that signed itself up: **who should
+ * carry it**. The hauliers near their store, on a small map, nearest first —
+ * and the answer decides which company's books the whole thing lands in, whose
+ * tariff quotes it and whose desk confirms it. A customer the office added
+ * never sees that card: their work goes to the haulier whose customer they are,
+ * and offering a choice the API would refuse is worse than offering none.
  *
  * The two ends are the same field the back office books with: a name to type,
  * and a map to pin it on. Typing stays the fast path — most requests are for a
@@ -45,11 +55,51 @@ export function RequestPage() {
    * together, and three separate pieces of state would let a latitude survive
    * a change of place.
    */
-  const [origin, setOrigin] = useState<TripLocation>(BLANK_LOCATION);
+  const { me } = useSession();
+
+  /**
+   * The address a carrier keeps for this firm, if one of them does.
+   *
+   * Nothing asks for it at sign-up — where a load goes out from is answered
+   * here, per load, which is the only place anybody knows. What fills it in is
+   * a haulier's office writing an address onto its own record of a firm it
+   * collects from at the same door every week, and when it is there it does two
+   * jobs: the carrier list is measured from it, and "pick up from" starts there
+   * instead of empty.
+   *
+   * Null is the ordinary case, and the screen is built for it: the picker below
+   * offers "use my location", and both ends of the trip are pinned on the map.
+   */
+  const store: GeoPoint | null =
+    me?.customer_lat != null && me?.customer_lng != null
+      ? {
+          place: me.customer_address ?? me.customer_name ?? '',
+          lat: me.customer_lat,
+          lng: me.customer_lng,
+        }
+      : null;
+
+  const blankOrigin: TripLocation = store
+    ? { place: store.place, lat: store.lat, lng: store.lng }
+    : BLANK_LOCATION;
+
+  const [origin, setOrigin] = useState<TripLocation>(blankOrigin);
   const [destination, setDestination] = useState<TripLocation>(BLANK_LOCATION);
   const [cargo, setCargo] = useState('');
   const [weight, setWeight] = useState('');
   const [whenDays, setWhenDays] = useState(1);
+
+  /**
+   * The haulier this load is going to.
+   *
+   * Null for a customer the office added, and the screen shows them no list —
+   * their work goes to their own carrier, which is the arrangement they are
+   * paying for and not a choice this form should pretend to offer. For a firm
+   * that signed itself up it is the first thing the form asks, because
+   * everything else is a detail about a load nobody has agreed to carry yet.
+   */
+  const [carrier, setCarrier] = useState<Carrier | null>(null);
+  const choosing = me?.chooses_carrier === true;
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,13 +150,16 @@ export function RequestPage() {
   const errorFor = (...keys: string[]) => keys.map((key) => fieldErrors[key]?.[0]).find(Boolean);
 
   const reset = () => {
-    setOrigin(BLANK_LOCATION);
+    setOrigin(blankOrigin);
     setDestination(BLANK_LOCATION);
     setCargo('');
     setWeight('');
     setWhenDays(1);
     setError(null);
     setFieldErrors({});
+    // The carrier is deliberately kept. Somebody filing a second pallet an
+    // hour later is almost always sending it with the same firm, and making
+    // them pick again would be the app forgetting what it just did.
   };
 
   const submit = () => {
@@ -126,12 +179,24 @@ export function RequestPage() {
       return;
     }
 
+    // Asked here rather than left to the API, because "choose a carrier" is an
+    // instruction and a 422 is a complaint.
+    if (choosing && carrier === null) {
+      setError('Choose the carrier you want to send this with.');
+
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setFieldErrors({});
 
     portalService
       .submit({
+        // Sent only when it was theirs to choose. An account the office
+        // created is refused for naming any carrier but its own, so a client
+        // that sent one regardless would turn every request into a 403.
+        ...(choosing && carrier !== null ? { carrier_id: carrier.id } : {}),
         origin: origin.place.trim(),
         // Each end travels as a pair or not at all — half a coordinate is not
         // a location, and the API says so with a 422 rather than storing one.
@@ -170,6 +235,13 @@ export function RequestPage() {
             {filed.origin} → {filed.destination}
           </Text>
 
+          {/* Who is holding it. The reference is only useful to the office
+              that has it, so a shipper using three hauliers needs the name
+              next to it or the number names nothing. */}
+          {filed.carrier ? (
+            <Text style={styles.doneCarrier}>with {filed.carrier}</Text>
+          ) : null}
+
           <View style={styles.quote}>
             <Text style={styles.quoteLabel}>QUOTED</Text>
             <Text style={styles.quoteValue}>
@@ -204,6 +276,27 @@ export function RequestPage() {
 
   return (
     <Screen title="Request a pickup" subtitle="The office confirms the crew and the time">
+      {/* Who first, then what. A load nobody has agreed to carry is not a
+          request yet, and the price the next card quotes comes off the chosen
+          haulier's own tariff — so the choice has to be made before the rest of
+          the form means anything. */}
+      {choosing ? (
+        <Card heading="Who should carry it?" icon="fleet" hint={carrier ? '1 chosen' : 'Pick one'}>
+          <CarrierPicker selected={carrier} onChange={setCarrier} around={store} />
+        </Card>
+      ) : (
+        <Card>
+          <View style={styles.heldRow}>
+            <Icon name="fleet" size={16} color={Brand.blue} />
+            <Text style={styles.heldText}>
+              Your deliveries are carried by{' '}
+              <Text style={styles.heldName}>{me?.company_name ?? 'your carrier'}</Text>. They
+              confirm the driver, the unit and the time.
+            </Text>
+          </View>
+        </Card>
+      )}
+
       <Card>
         <LocationField
           label="Pick up from"
@@ -386,6 +479,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   doneBody: { marginTop: 4, fontSize: 14, color: Brand.inkMuted, textAlign: 'center' },
+  doneCarrier: {
+    marginTop: 2,
+    fontSize: 14,
+    fontWeight: '600',
+    color: Brand.ink,
+    textAlign: 'center',
+  },
+
+  heldRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.two },
+  heldText: { flex: 1, minWidth: 0, fontSize: 13, lineHeight: 19, color: Brand.inkMuted },
+  heldName: { fontWeight: '700', color: Brand.ink },
   quote: {
     marginTop: Spacing.four,
     alignItems: 'center',

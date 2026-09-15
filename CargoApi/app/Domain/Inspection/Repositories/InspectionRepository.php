@@ -21,7 +21,12 @@ class InspectionRepository extends Repository
     {
         return Inspection::query()
             ->with(['vehicle:id,plate', 'driver:id,name', 'trip:id,reference'])
-            ->orderByDesc('inspected_at');
+            // The id breaks a tie on the timestamp. Two checks in the same
+            // second is what a re-check at the gate looks like, and "the
+            // latest" has to mean the second one rather than whichever the
+            // database happens to return — a ULID sorts by when it was minted.
+            ->orderByDesc('inspected_at')
+            ->orderByDesc('id');
     }
 
     public function latestForTrip(string $tripId): ?Inspection

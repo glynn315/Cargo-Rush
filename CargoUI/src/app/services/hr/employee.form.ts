@@ -3,7 +3,6 @@ import { inject } from '@angular/core';
 import { Employee } from '../../models/hr/hr.model';
 import { RecordSpec, statusOptions, toFormData } from '../../shared/record-form-spec';
 import { AccessService } from '../identity/access.service';
-import { DriverService } from '../driver/driver.service';
 import { EmployeeService } from './employee.service';
 
 /**
@@ -18,26 +17,47 @@ import { EmployeeService } from './employee.service';
  * The employee number is not a field. It is allocated by the API when the
  * office has none to give, and a number that has been on a payslip is never
  * reissued — which is not something a form control can promise.
+ *
+ * **The driver details are separate, and conditional.** There used to be a
+ * *Driver record* dropdown here listing every driver on file. It asked
+ * somebody hiring a mechanic to choose from a fleet of drivers for no reason,
+ * and somebody hiring an actual driver to choose a record that does not exist
+ * yet — so registering a driver meant creating half a person in Drivers
+ * Management first and coming back. It is now a licence number and an expiry,
+ * shown only when the chosen job drives, and the API finds or opens the
+ * `drivers` row from the licence.
  */
 export function employeeSpec(): RecordSpec<Employee> {
   const employees = inject(EmployeeService);
-  const drivers = inject(DriverService);
   const access = inject(AccessService);
 
-  const roster: { value: string; label: string }[] = [];
   const jobs: { value: string; label: string }[] = [];
 
-  drivers.list().subscribe((res) => {
-    roster.length = 0;
-    roster.push(...res.data.map((d) => ({ value: d.id, label: d.name })));
-  });
+  /**
+   * The positions that need a licence, by id.
+   *
+   * Held as a set rather than re-derived per keystroke, and filled from the
+   * API's own `drives` flag rather than guessed from the job's name — "Long-haul
+   * Driver" and "Yard Marshal" are not a pattern a client can match, and the
+   * server is the one that will accept or refuse the save.
+   */
+  const driving = new Set<string>();
 
   // Active only: a retired position is one the office has stopped hiring for,
   // and offering it would quietly put new people back into it.
   access.positions(true).subscribe((res) => {
     jobs.length = 0;
     jobs.push(...res.data.map((p) => ({ value: p.id, label: p.name })));
+
+    driving.clear();
+    for (const position of res.data) {
+      if (position.drives) driving.add(position.id);
+    }
   });
+
+  /** Does the job currently chosen on the form need a licence? */
+  const jobDrives = (values: Record<string, unknown>): boolean =>
+    driving.has(String(values['position_id'] ?? ''));
 
   return {
     noun: 'employee',
@@ -86,13 +106,33 @@ export function employeeSpec(): RecordSpec<Employee> {
       { key: 'emergency_contact', label: 'Emergency contact', kind: 'text' },
       { key: 'emergency_phone', label: 'Emergency number', kind: 'text' },
       { key: 'base_salary', label: 'Base salary (₱)', kind: 'money' },
+
+      /**
+       * The driver details. On screen only when the job drives.
+       *
+       * Required there, and the API says the same — this is the client half of
+       * one rule, not a second rule. A licence typed against an office job is
+       * dropped rather than obeyed at the other end, so the two cannot disagree
+       * about who ends up on the driver roster.
+       */
       {
-        key: 'driver_id',
-        label: 'Driver record',
-        kind: 'select',
-        options: () => roster,
-        hint: 'Links to the record trips are booked against.',
+        key: 'licence_no',
+        label: 'Licence number',
+        kind: 'text',
+        required: true,
+        placeholder: 'N01-23-456789',
+        hint: 'Exactly as printed. Matches an existing driver record if there is one.',
+        showWhen: jobDrives,
       },
+      {
+        key: 'licence_expiry',
+        label: 'Licence expiry',
+        kind: 'date',
+        required: true,
+        hint: 'The system warns you 90 days out.',
+        showWhen: jobDrives,
+      },
+
       {
         key: 'photo',
         label: 'Photograph',
@@ -129,7 +169,12 @@ export function employeeSpec(): RecordSpec<Employee> {
       emergency_contact: record.emergency_contact ?? '',
       emergency_phone: record.emergency_phone ?? '',
       base_salary: record.base_salary_cents / 100,
-      driver_id: record.driver_id ?? '',
+      // Read back off the driver record, so reopening somebody shows the
+      // licence on file rather than an empty box that looks like it was never
+      // entered. Blank for everybody who does not drive — the fields are not
+      // on screen for them anyway.
+      licence_no: record.licence_no ?? '',
+      licence_expiry: record.licence_expiry ?? '',
       status: record.status,
       notes: record.notes ?? '',
       // Never prefilled: a file input cannot be given a value, and the API

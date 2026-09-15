@@ -10,7 +10,10 @@ use App\Domain\Delivery\Models\DeliveryLog;
 use App\Domain\Dispatch\Models\DispatchRecord;
 use App\Domain\Driver\Models\Driver;
 use App\Domain\Gps\Models\GpsPing;
+use App\Domain\Inspection\Models\Inspection;
 use App\Domain\Shared\Enums\StatusValue;
+use App\Domain\Shared\Support\Geo;
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use App\Domain\Vehicle\Models\Vehicle;
 use Database\Factories\TripFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -29,7 +32,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Trip extends Model
 {
     /** @use HasFactory<TripFactory> */
-    use HasFactory, HasUlids, SoftDeletes;
+    use BelongsToCompany, HasFactory, HasUlids, SoftDeletes;
 
     protected $fillable = [
         'reference', 'customer_id', 'origin', 'destination', 'cargo',
@@ -89,6 +92,32 @@ class Trip extends Model
     public function latestPing(): HasOne
     {
         return $this->hasOne(GpsPing::class)->latestOfMany('recorded_at');
+    }
+
+    /**
+     * The pre-trip check that cleared this run — or the last attempt at one.
+     *
+     * A run cannot be started without a passing check (see
+     * `TripService::startForDriver`), so on anything in transit or delivered
+     * this is the record of the truck being looked over before it rolled. On a
+     * confirmed run it is null until the driver does it, or it is a failed
+     * attempt sitting there with the reason on it.
+     *
+     * The *latest* of them, because a held unit gets checked again once the
+     * fault is fixed and what matters is where it stands now.
+     *
+     * The id is the tiebreak, and it is not decoration: a fault found and fixed
+     * inside the same second — which is every test and the occasional real
+     * re-check at the gate — leaves two rows with identical timestamps, and
+     * "whichever the database returns first" would sometimes be the failed one.
+     * A ULID sorts by the moment it was minted, so the highest is the newest.
+     */
+    public function latestInspection(): HasOne
+    {
+        return $this->hasOne(Inspection::class)->ofMany([
+            'inspected_at' => 'max',
+            'id' => 'max',
+        ]);
     }
 
     public function dispatchRecord(): HasOne
@@ -186,16 +215,12 @@ class Trip extends Model
             return null;
         }
 
-        $earthRadiusM = 6_371_000;
-
-        $lat1 = deg2rad((float) $this->origin_lat);
-        $lat2 = deg2rad((float) $this->destination_lat);
-        $dLat = $lat2 - $lat1;
-        $dLng = deg2rad((float) $this->destination_lng - (float) $this->origin_lng);
-
-        $a = sin($dLat / 2) ** 2 + cos($lat1) * cos($lat2) * sin($dLng / 2) ** 2;
-
-        return (int) round($earthRadiusM * 2 * asin(min(1.0, sqrt($a))));
+        return (int) round(Geo::metresBetween(
+            (float) $this->origin_lat,
+            (float) $this->origin_lng,
+            (float) $this->destination_lat,
+            (float) $this->destination_lng,
+        ));
     }
 
     /** The next reference in the CR-##### series. */

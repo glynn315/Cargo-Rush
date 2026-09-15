@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Hr\Models;
 
 use App\Domain\Shared\Enums\ApplicantStage;
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -21,7 +22,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Applicant extends Model
 {
-    use HasUlids, SoftDeletes;
+    use BelongsToCompany, HasUlids, SoftDeletes;
 
     protected $fillable = [
         'first_name', 'last_name', 'position_applied', 'contact', 'email',

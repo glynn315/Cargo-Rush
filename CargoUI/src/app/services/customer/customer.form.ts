@@ -30,6 +30,14 @@ export function customerSpec(): RecordSpec<Customer> {
         hint: 'Email or phone — whichever the office actually uses.',
       },
       {
+        key: 'address',
+        label: 'Where their loads leave from',
+        kind: 'text',
+        wide: true,
+        placeholder: 'Carmen, Cagayan de Oro',
+        hint: 'Filled in by firms that signed up in the app and pinned their store. Their pin is theirs to move; this line is yours to correct.',
+      },
+      {
         key: 'email',
         label: 'Portal login',
         kind: 'text',
@@ -44,6 +52,43 @@ export function customerSpec(): RecordSpec<Customer> {
         kind: 'select',
         options: statusOptions(['active', 'pending', 'inactive']),
       },
+
+      /**
+       * How this firm is taxed.
+       *
+       * Set once here and read by every invoice raised for them — by hand or
+       * by a delivery — so nobody has to remember it per document. Both are
+       * properties of who is being billed rather than of what was hauled,
+       * which is why they live on the customer.
+       */
+      {
+        key: 'tin',
+        label: 'TIN',
+        kind: 'text',
+        placeholder: '123-456-789-000',
+        hint: 'Printed on the invoice. A VAT invoice without it gets sent back.',
+      },
+      {
+        key: 'vat_treatment',
+        label: 'VAT',
+        kind: 'select',
+        options: () => [
+          { value: 'vatable', label: 'VAT (12%)' },
+          { value: 'zero_rated', label: 'Zero-rated' },
+          { value: 'exempt', label: 'VAT-exempt' },
+        ],
+        hint: 'Zero-rated is for exporters and PEZA locators.',
+      },
+      {
+        key: 'withholds_tax',
+        label: 'Withholds tax',
+        kind: 'select',
+        options: () => [
+          { value: 'no', label: 'No' },
+          { value: 'yes', label: 'Yes — keeps back EWT' },
+        ],
+        hint: 'Government agencies and large corporates usually do. They pay less than the invoice says, on purpose.',
+      },
     ],
 
     title: (customer) => customer.name,
@@ -51,19 +96,29 @@ export function customerSpec(): RecordSpec<Customer> {
     toForm: (customer) => ({
       name: customer.name,
       contact: customer.contact,
+      address: customer.address ?? '',
       email: customer.login_email ?? '',
       rating: customer.rating,
       status: customer.status,
+      tin: customer.tin ?? '',
+      vat_treatment: customer.vat_treatment,
+      // The shared form has no checkbox kind, so this is a two-option select
+      // and the strings are mapped back to a boolean on the way out.
+      withholds_tax: customer.withholds_tax ? 'yes' : 'no',
     }),
 
     toPayload: (values) => ({
       name: values['name'],
       contact: values['contact'],
+      address: String(values['address'] ?? '').trim() || null,
       // Absent rather than empty when nothing was typed: the API reads an
       // address as "give this firm a login", and a blank one is not that.
       email: String(values['email'] ?? '').trim() || undefined,
       rating: Number(values['rating'] ?? 0),
       status: values['status'] || 'active',
+      tin: String(values['tin'] ?? '').trim() || null,
+      vat_treatment: values['vat_treatment'] || 'vatable',
+      withholds_tax: values['withholds_tax'] === 'yes',
     }),
 
     save: (payload, id) =>

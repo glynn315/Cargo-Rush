@@ -21,6 +21,36 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/auth/login.page').then((m) => m.LoginPage),
   },
 
+  // The way onto the platform. Behind `guestGuard` for the same reason sign-in
+  // is: somebody already signed in has a company, and offering them a form to
+  // create a second one from inside the first is a question with no good
+  // answer.
+  {
+    path: 'register',
+    title: 'Register your company · Cargo Rush',
+    canActivate: [guestGuard],
+    loadComponent: () => import('./pages/auth/register.page').then((m) => m.RegisterPage),
+  },
+
+  // Getting back in. Behind `guestGuard` like the other two: somebody already
+  // signed in has no use for a reset link, and changing a password from inside
+  // the app is a different screen with a different rule (it asks for the
+  // current one).
+  {
+    path: 'forgot-password',
+    title: 'Forgotten password · Cargo Rush',
+    canActivate: [guestGuard],
+    loadComponent: () =>
+      import('./pages/auth/forgot-password.page').then((m) => m.ForgotPasswordPage),
+  },
+  {
+    path: 'reset-password',
+    title: 'Choose a new password · Cargo Rush',
+    canActivate: [guestGuard],
+    loadComponent: () =>
+      import('./pages/auth/reset-password.page').then((m) => m.ResetPasswordPage),
+  },
+
   {
     path: '',
     component: Layout,
@@ -33,7 +63,8 @@ export const routes: Routes = [
         path: 'dashboard',
         title: 'Dashboard · Cargo Rush',
         data: { title: 'Dashboard' },
-        loadComponent: () => import('./pages/dashboard/dashboard.page').then((m) => m.DashboardPage),
+        loadComponent: () =>
+          import('./pages/dashboard/dashboard.page').then((m) => m.DashboardPage),
       },
       {
         path: 'gps',
@@ -57,7 +88,8 @@ export const routes: Routes = [
         path: 'delivery-logs',
         title: 'Delivery Logs · Cargo Rush',
         data: { title: 'Delivery Logs' },
-        loadComponent: () => import('./pages/delivery-logs/delivery-logs.page').then((m) => m.DeliveryLogsPage),
+        loadComponent: () =>
+          import('./pages/delivery-logs/delivery-logs.page').then((m) => m.DeliveryLogsPage),
       },
 
       // Assets
@@ -85,13 +117,15 @@ export const routes: Routes = [
         path: 'monitoring',
         title: 'Trip Monitoring · Cargo Rush',
         data: { title: 'Daily Trip Monitoring' },
-        loadComponent: () => import('./pages/monitoring/monitoring.page').then((m) => m.MonitoringPage),
+        loadComponent: () =>
+          import('./pages/monitoring/monitoring.page').then((m) => m.MonitoringPage),
       },
       {
         path: 'profitability',
         title: 'Profitability · Cargo Rush',
         data: { title: 'Profitability' },
-        loadComponent: () => import('./pages/profitability/profitability.page').then((m) => m.ProfitabilityPage),
+        loadComponent: () =>
+          import('./pages/profitability/profitability.page').then((m) => m.ProfitabilityPage),
       },
       {
         path: 'summary',
@@ -105,6 +139,61 @@ export const routes: Routes = [
         data: { title: 'Other Expenses' },
         loadComponent: () => import('./pages/expenses/expenses.page').then((m) => m.ExpensesPage),
       },
+      /**
+       * The books, in the order they are worked in: entries are written in the
+       * journal, the ledger is read off them, and the chart is what both point
+       * at. Same order as the sidebar (`NavigationSeeder`), which is what the
+       * `accounting.view` permission gates — the routes are reachable by URL to
+       * anybody signed in, and the API refuses each one for an account that
+       * does not hold it.
+       */
+      /**
+       * One invoice as a document — the printable copy.
+       *
+       * A child of billing rather than a modal on it, because a document is a
+       * place: the URL is a link somebody can send to a colleague or keep in a
+       * tab, and printing needs a page of its own for the print stylesheet to
+       * strip the shell off. Declared before `billing` so the parameterised
+       * path is not shadowed by it.
+       */
+      {
+        path: 'billing/:invoice',
+        title: 'Invoice · Cargo Rush',
+        data: { title: 'Invoice' },
+        loadComponent: () => import('./pages/invoice/invoice.page').then((m) => m.InvoicePage),
+      },
+      /**
+       * The statements first, because they are what the books are *for*.
+       *
+       * The journal and the ledger below are how a figure here got to be what
+       * it is; this is the page somebody opens to find out whether the month
+       * paid. Same order as the sidebar (`NavigationSeeder`).
+       */
+      {
+        path: 'statements',
+        title: 'Financial Statements · Cargo Rush',
+        data: { title: 'Financial Statements' },
+        loadComponent: () =>
+          import('./pages/statements/statements.page').then((m) => m.StatementsPage),
+      },
+      {
+        path: 'journal',
+        title: 'General Journal · Cargo Rush',
+        data: { title: 'General Journal' },
+        loadComponent: () => import('./pages/journal/journal.page').then((m) => m.JournalPage),
+      },
+      {
+        path: 'ledger',
+        title: 'General Ledger · Cargo Rush',
+        data: { title: 'General Ledger' },
+        loadComponent: () => import('./pages/ledger/ledger.page').then((m) => m.LedgerPage),
+      },
+      {
+        path: 'accounts',
+        title: 'Chart of Accounts · Cargo Rush',
+        data: { title: 'Chart of Accounts' },
+        loadComponent: () => import('./pages/accounts/accounts.page').then((m) => m.AccountsPage),
+      },
       {
         path: 'sales',
         title: 'Sales Report · Cargo Rush',
@@ -117,7 +206,8 @@ export const routes: Routes = [
         path: 'customers',
         title: 'Customer Management · Cargo Rush',
         data: { title: 'Customer Management' },
-        loadComponent: () => import('./pages/customers/customers.page').then((m) => m.CustomersPage),
+        loadComponent: () =>
+          import('./pages/customers/customers.page').then((m) => m.CustomersPage),
       },
       {
         path: 'billing',
@@ -137,7 +227,8 @@ export const routes: Routes = [
         path: 'employees',
         title: 'Employees · Cargo Rush',
         data: { title: 'Employees' },
-        loadComponent: () => import('./pages/employees/employees.page').then((m) => m.EmployeesPage),
+        loadComponent: () =>
+          import('./pages/employees/employees.page').then((m) => m.EmployeesPage),
       },
       {
         path: 'applicants',
@@ -159,6 +250,20 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./pages/performance/performance.page').then((m) => m.PerformancePage),
       },
+      /**
+       * Payroll sits with the people rather than with the money.
+       *
+       * It is read by whoever answers for the roster and run by whoever signs
+       * the cheque, which is why the API gates it on its own `payroll.*`
+       * permissions rather than on `hr.*` — a payslip is somebody's private
+       * business, and approving a run is the money side.
+       */
+      {
+        path: 'payroll',
+        title: 'Payroll · Cargo Rush',
+        data: { title: 'Payroll' },
+        loadComponent: () => import('./pages/payroll/payroll.page').then((m) => m.PayrollPage),
+      },
       {
         path: 'access',
         title: 'Access Control · Cargo Rush',
@@ -171,13 +276,15 @@ export const routes: Routes = [
         path: 'incidents',
         title: 'Incident Management · Cargo Rush',
         data: { title: 'Incident Management' },
-        loadComponent: () => import('./pages/incidents/incidents.page').then((m) => m.IncidentsPage),
+        loadComponent: () =>
+          import('./pages/incidents/incidents.page').then((m) => m.IncidentsPage),
       },
       {
         path: 'notifications',
         title: 'Notifications · Cargo Rush',
         data: { title: 'Notification Management' },
-        loadComponent: () => import('./pages/notifications/notifications.page').then((m) => m.NotificationsPage),
+        loadComponent: () =>
+          import('./pages/notifications/notifications.page').then((m) => m.NotificationsPage),
       },
 
       { path: '**', redirectTo: 'dashboard' },

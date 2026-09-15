@@ -9,6 +9,7 @@ use App\Domain\Identity\Models\Position;
 use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Enums\EmploymentType;
 use App\Domain\Shared\Enums\StatusValue;
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -27,7 +28,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Employee extends Model
 {
-    use HasUlids, SoftDeletes;
+    use BelongsToCompany, HasUlids, SoftDeletes;
 
     protected $fillable = [
         'employee_no', 'first_name', 'last_name', 'middle_name',

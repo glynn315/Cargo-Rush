@@ -7,6 +7,7 @@ namespace App\Domain\Customer\Requests;
 use App\Domain\Customer\DTO\CustomerData;
 use App\Domain\Customer\Models\Customer;
 use App\Domain\Shared\Enums\StatusValue;
+use App\Domain\Shared\Enums\VatTreatment;
 use App\Domain\Shared\Http\Requests\ApiFormRequest;
 use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Validation\Rule;
@@ -20,8 +21,46 @@ class CustomerRequest extends ApiFormRequest
         return [
             'name' => [$required, 'string', 'max:160'],
             'contact' => [$required, 'string', 'max:160'],
+
+            /**
+             * Where the firm's loads leave from.
+             *
+             * Optional, and the desk will usually leave it empty — a customer
+             * they typed in is a customer they ring. It arrives filled in for a
+             * firm that signed itself up in the app and pinned its store, and is
+             * editable here because the record is the haulier's to keep straight.
+             *
+             * A pair or nothing, the same rule both ends of a trip follow.
+             */
+            'address' => ['nullable', 'string', 'max:255'],
+            'latitude' => ['nullable', 'numeric', 'between:-90,90', 'required_with:longitude'],
+            'longitude' => ['nullable', 'numeric', 'between:-180,180', 'required_with:latitude'],
+
             'rating' => ['sometimes', 'numeric', 'min:0', 'max:5'],
             'status' => ['sometimes', Rule::in(StatusValue::values())],
+
+            /**
+             * How this firm is taxed.
+             *
+             * Both are properties of who is being billed rather than of what
+             * was hauled, which is why they live on the customer and not on
+             * the trip or the invoice form — and why every invoice raised for
+             * them, by hand or by a delivery, picks them up automatically.
+             *
+             * `tin` is printed on the document. A VAT invoice without the
+             * buyer's TIN is one their accounts payable will send back.
+             */
+            'tin' => ['nullable', 'string', 'max:20'],
+            'vat_treatment' => ['sometimes', Rule::in(VatTreatment::values())],
+            'withholds_tax' => ['sometimes', 'boolean'],
+            /**
+             * Null means the statutory rate, so a change in law reaches every
+             * customer who never had a special one. Bounded well above 2% —
+             * some payments to contractors are withheld at higher rates, and a
+             * cap at the common case would be wrong the first time somebody
+             * needed 5%.
+             */
+            'withholding_rate_bp' => ['nullable', 'integer', 'min:0', 'max:5000'],
 
             /**
              * What the firm signs in with. Optional, because a customer the

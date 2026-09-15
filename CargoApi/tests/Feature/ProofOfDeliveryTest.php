@@ -53,6 +53,8 @@ beforeEach(function (): void {
             'status' => StatusValue::Assigned->value,
         ])->json('data.id');
 
+        // A unit does not roll without a passing pre-trip check.
+        $this->passPreTripCheck($id);
         $this->actingAs($this->marco)->postJson("/api/v1/trips/{$id}/start", [])->assertOk();
 
         return $id;

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Finance\Models;
 
 use App\Domain\Shared\Enums\StatusValue;
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 /** What a peso went on: food, fuel, tolls, permits. */
 class ExpenseCategory extends Model
 {
-    use HasUlids, SoftDeletes;
+    use BelongsToCompany, HasUlids, SoftDeletes;
 
     protected $fillable = ['key', 'name', 'description', 'icon', 'position', 'status'];
 

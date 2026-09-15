@@ -19,8 +19,20 @@ use Illuminate\Database\Seeder;
  * business's own, and is entered through the UI. Nothing here invents a truck
  * that does not exist or a route nobody drives.
  *
- * Real staff accounts are added with `php artisan cargo:user`, which asks for
- * a password rather than taking one from a file.
+ * Since the system became multi-company, the configuration falls into two
+ * kinds, and the order below is that split rather than a preference:
+ *
+ *   **The platform's**, seeded once. Permissions are the vocabulary code checks
+ *   for, and the navigation is the list of modules this application has. A
+ *   company inventing either would produce a permission that gates nothing and
+ *   a menu item that leads nowhere.
+ *
+ *   **Each company's**, seeded per company by `CompanySeeder`. Roles,
+ *   positions and expense categories are what every office does differently,
+ *   and a firm that renames them keeps the change through every deployment.
+ *
+ * Real staff accounts are added with `php artisan cargo:user`, which asks which
+ * company they belong to and takes a typed password rather than one from a file.
  *
  * Demo data for a walkthrough is `Database\Seeders\Demo\*`, run on purpose:
  *
@@ -31,16 +43,23 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call([
-            // Access control first: the navigation is filtered by permission,
-            // and a position's default role has to exist before it points at one.
+            // ---- The platform's, and not any company's to redefine.
+            //
+            // Permissions first: roles are ticked against them, and the
+            // navigation is filtered by them.
             PermissionSeeder::class,
-            RoleSeeder::class,
-            PositionSeeder::class,
             NavigationSeeder::class,
-            // Configuration for the same reason the navigation is: an expense
-            // cannot be filed without a category, so an empty table is a
-            // module nobody can open rather than one waiting for its first row.
-            ExpenseCategorySeeder::class,
+
+            // ---- Each company's own.
+            //
+            // Roles, positions and expense categories, laid down for every
+            // company on the install — the same set registration gives a new
+            // one. Running this after an upgrade tops up companies registered
+            // before it.
+            CompanySeeder::class,
+
+            // Last, because an account holds a role and the roles have to
+            // exist for it to hold one.
             UserSeeder::class,
         ]);
 

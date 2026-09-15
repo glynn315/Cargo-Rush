@@ -59,9 +59,20 @@ export function CustomerHomePage() {
           ? `${moving} deliver${moving === 1 ? 'y' : 'ies'} booked and on the way.`
           : 'Nothing booked right now — ask for a pickup below.';
 
-  // The three most recent, so the home screen answers "where is my stuff"
-  // without becoming the list screen. The rest is one tap away on Deliveries.
-  const recent = (requests.data ?? []).slice(0, 3);
+  /**
+   * The three most recent loads still in play.
+   *
+   * Delivered runs are deliberately not here. They are finished business and
+   * they live in History on the Deliveries screen — a home screen led by three
+   * completed hauls answers "where is my stuff" with "it arrived last week",
+   * which is the one thing the reader already knows. Cancelled goes with them
+   * for the same reason.
+   *
+   * Three, so this stays a summary rather than becoming the list screen.
+   */
+  const recent = (requests.data ?? [])
+    .filter((trip) => trip.status !== 'delivered' && trip.status !== 'cancelled')
+    .slice(0, 3);
 
   return (
     <Screen title="Cargo Rush" brand>
@@ -130,6 +141,45 @@ export function CustomerHomePage() {
         ) : null}
       </Card>
 
+      {/* Who this firm sends with, and what is outstanding to each.
+          One row for a customer the office added — they have one haulier and
+          will only ever have one, and the card still earns its place by naming
+          them. Several for a business that signed itself up and shopped
+          around, where "you owe ₱48,000" means nothing until it says to whom. */}
+      {(summary.data?.carriers ?? []).length > 0 ? (
+        <Card
+          heading={
+            (summary.data?.carriers.length ?? 0) > 1 ? 'Your carriers' : 'Your carrier'
+          }
+          icon="fleet"
+          padded={false}>
+          {(summary.data?.carriers ?? []).map((carrier, index, all) => (
+            <View
+              key={carrier.id}
+              style={[styles.row, index < all.length - 1 && styles.rowDivider]}>
+              <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+                <Text style={styles.rowTitle} numberOfLines={1}>
+                  {carrier.name}
+                </Text>
+                <Text style={styles.rowSub}>
+                  {carrier.awaiting_confirmation > 0
+                    ? `${carrier.awaiting_confirmation} awaiting confirmation · `
+                    : ''}
+                  {carrier.in_transit > 0 ? `${carrier.in_transit} on the road · ` : ''}
+                  {carrier.delivered} delivered
+                </Text>
+              </View>
+              <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                <Text style={styles.rowOwed}>
+                  {fmt.money(carrier.pending_payment_cents, summary.data?.currency ?? 'PHP')}
+                </Text>
+                <Text style={styles.rowSub}>owed</Text>
+              </View>
+            </View>
+          ))}
+        </Card>
+      ) : null}
+
       <Card
         heading="Recent deliveries"
         icon="shipments"
@@ -143,8 +193,14 @@ export function CustomerHomePage() {
           <ErrorState message={requests.error.message} onRetry={requests.reload} />
         ) : recent.length === 0 ? (
           <EmptyState
-            title="No deliveries yet"
-            body="Ask for a pickup and it will show up here while the office confirms it."
+            title={
+              (requests.data ?? []).length === 0 ? 'No deliveries yet' : 'Nothing on the move'
+            }
+            body={
+              (requests.data ?? []).length === 0
+                ? 'Ask for a pickup and it will show up here while the office confirms it.'
+                : 'Everything you have sent has arrived. The finished ones are under History on Deliveries.'
+            }
           />
         ) : (
           recent.map((trip: Trip, index: number) => (
@@ -230,4 +286,5 @@ const styles = StyleSheet.create({
   rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Brand.line },
   rowTitle: { fontSize: 14, fontWeight: '600', color: Brand.ink, fontVariant: ['tabular-nums'] },
   rowSub: { fontSize: 12, color: Brand.inkMuted },
+  rowOwed: { fontSize: 14, fontWeight: '700', color: Brand.ink, fontVariant: ['tabular-nums'] },
 });

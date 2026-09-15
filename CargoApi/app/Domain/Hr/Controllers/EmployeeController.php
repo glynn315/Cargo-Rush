@@ -49,7 +49,13 @@ class EmployeeController extends ApiController
 
     public function store(EmployeeRequest $request): JsonResponse
     {
-        $employee = $this->employees->register($request->toData(), $request->photo());
+        $employee = $this->employees->register(
+            $request->toData(),
+            $request->photo(),
+            // Null unless the job drives. The service opens or finds the
+            // `drivers` row; the client no longer names one.
+            $request->toLicence(),
+        );
 
         return $this->item(new EmployeeResource($employee), status: 201);
     }
@@ -57,7 +63,7 @@ class EmployeeController extends ApiController
     public function update(EmployeeRequest $request, Employee $employee): JsonResponse
     {
         return $this->item(new EmployeeResource(
-            $this->employees->edit($employee, $request->toData(), $request->photo())
+            $this->employees->edit($employee, $request->toData(), $request->photo(), $request->toLicence())
         ));
     }
 

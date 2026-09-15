@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Finance\Models;
 
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use App\Domain\Vehicle\Models\Vehicle;
 use Database\Factories\TruckFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -22,7 +23,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Truck extends Model
 {
     /** @use HasFactory<TruckFactory> */
-    use HasFactory, HasUlids;
+    use BelongsToCompany, HasFactory, HasUlids;
 
     protected $fillable = ['label', 'plate', 'vehicle_id', 'position'];
 

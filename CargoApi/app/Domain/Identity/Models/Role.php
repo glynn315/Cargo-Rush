@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Identity\Models;
 
 use App\Domain\Shared\Enums\StatusValue;
+use App\Domain\Tenancy\Models\Concerns\BelongsToCompany;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -23,7 +24,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Role extends Model
 {
-    use HasUlids, SoftDeletes;
+    use BelongsToCompany, HasUlids, SoftDeletes;
 
     protected $fillable = [
         'key', 'name', 'description', 'is_system', 'all_permissions', 'position', 'status',

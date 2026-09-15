@@ -9,6 +9,8 @@ use App\Domain\Driver\Models\Driver;
 use App\Domain\Identity\Models\User;
 use App\Domain\Shared\Enums\Role;
 use App\Domain\Shared\Enums\StatusValue;
+use App\Domain\Tenancy\Models\Company;
+use App\Domain\Tenancy\Support\Tenant;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -29,10 +31,17 @@ use function Laravel\Prompts\text;
  * Creating a driver also creates their `drivers` record, because a login
  * without one cannot be assigned a trip — the mobile app would sign them in
  * and then have nothing to show them.
+ *
+ * **Which company comes first**, before anything else is asked. It is not one
+ * question among several: it decides which customers are offered to a customer
+ * account, which company the driver record lands in, and whose books this
+ * person will be able to open. Getting it wrong does not fail — it quietly
+ * creates a working account in the wrong firm.
  */
 class CreateUserCommand extends Command
 {
     protected $signature = 'cargo:user
+        {--company= : Company name, code or id}
         {--name= : Full name}
         {--email= : Email address}
         {--role= : administrator, dispatcher, accountant, driver or customer}
@@ -42,7 +51,26 @@ class CreateUserCommand extends Command
 
     protected $description = 'Create a Cargo Rush account';
 
+    public function __construct(private readonly Tenant $tenant)
+    {
+        parent::__construct();
+    }
+
     public function handle(): int
+    {
+        $company = $this->companyFor();
+
+        if ($company === null) {
+            return self::FAILURE;
+        }
+
+        // Everything from here runs inside the company: the `users` row, the
+        // `drivers` row behind a driver, and the customer lookup that offers
+        // only firms this company actually has on file.
+        return $this->tenant->use($company, fn (): int => $this->createAccount($company));
+    }
+
+    private function createAccount(Company $company): int
     {
         $name = $this->option('name') ?: text('Full name', required: true);
         $email = $this->option('email') ?: text('Email address', required: true);
@@ -131,9 +159,61 @@ class CreateUserCommand extends Command
             return $user;
         });
 
-        $this->info("Created {$user->name} <{$user->email}> as {$roleEnum->label()}.");
+        $this->info("Created {$user->name} <{$user->email}> as {$roleEnum->label()} at {$company->name}.");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Which company this account belongs to.
+     *
+     * A single-company install never notices the question: there is one row, it
+     * is the answer, and nobody is asked. That keeps the command exactly as it
+     * was for every install that has not gone multi-company.
+     *
+     * `--company` matches an id, a code or a name, so an unattended run can use
+     * whichever it has to hand. No match stops rather than guessing — an
+     * account created in the wrong firm is a working login looking at somebody
+     * else's fleet, which is worse than a failed command.
+     */
+    private function companyFor(): ?Company
+    {
+        $companies = Company::query()->orderBy('name')->get();
+
+        if ($companies->isEmpty()) {
+            $this->error('No companies on this install. Register one first at POST /api/v1/register.');
+
+            return null;
+        }
+
+        $named = $this->option('company');
+
+        if ($named !== null) {
+            $match = $companies->first(
+                static fn (Company $c): bool => $c->id === $named || $c->code === $named || $c->name === $named,
+            );
+
+            if ($match === null) {
+                $this->error("No company matching \"{$named}\". Known: ".$companies->pluck('code')->join(', '));
+
+                return null;
+            }
+
+            return $match;
+        }
+
+        if ($companies->count() === 1) {
+            return $companies->first();
+        }
+
+        $choice = select(
+            'Company',
+            $companies->mapWithKeys(
+                static fn (Company $c): array => [$c->id => "{$c->name} ({$c->code})"],
+            )->all(),
+        );
+
+        return $companies->firstWhere('id', $choice);
     }
 
     /**

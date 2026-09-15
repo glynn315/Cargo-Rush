@@ -328,6 +328,8 @@ describe('the desk confirms it', function (): void {
         ];
 
         $this->actingAs($this->admin)->postJson("/api/v1/trips/{$id}/confirm", $crew)->assertOk();
+        // A unit does not roll without a passing pre-trip check.
+        $this->passPreTripCheck($id);
         $this->actingAs($this->marco)->postJson("/api/v1/trips/{$id}/start", [])->assertOk();
 
         // Confirming it again would move it backwards. Amending an in-flight
