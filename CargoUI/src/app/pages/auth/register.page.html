@@ -1,0 +1,158 @@
+<div class="flex h-full items-center justify-center overflow-y-auto bg-cr-tint p-4">
+  <!-- Wider than the sign-in card: this form carries a map, and a 280px map in
+       a 420px column is a map nobody can pick a depot on. -->
+  <div class="w-full max-w-[520px] py-6">
+    <div class="mb-6 flex justify-center">
+      <app-wordmark [size]="28" />
+    </div>
+
+    <form
+      [formGroup]="form"
+      (ngSubmit)="submit()"
+      class="rounded-panel bg-cr-surface p-6 shadow-panel">
+      <h1 class="text-[16px] font-semibold">Register your company</h1>
+      <p class="mt-1 text-[14px] text-cr-ink-muted">
+        Your fleet, your people and your books, kept separately from every other
+        company on Cargo Rush.
+      </p>
+
+      @if (failure(); as message) {
+        <p
+          role="alert"
+          class="mt-4 rounded-control bg-cr-red-bg px-3 py-2 text-[13px] font-medium text-cr-red">
+          {{ message }}
+        </p>
+      }
+
+      <h2 class="mt-6 text-[13px] font-semibold text-cr-ink-muted">The company</h2>
+
+      <div class="mt-3 flex flex-col gap-4">
+        <app-field label="Company name" required [error]="errorFor('company_name')">
+          <input
+            type="text"
+            formControlName="company_name"
+            autocomplete="organization"
+            [class]="inputClass"
+            placeholder="Southern Freight Services" />
+        </app-field>
+
+        <app-field
+          label="Contact number"
+          hint="Optional. Where to reach you about the account itself."
+          [error]="errorFor('contact_phone')">
+          <input
+            type="tel"
+            formControlName="contact_phone"
+            autocomplete="tel"
+            [class]="inputClass"
+            placeholder="0917 000 1111" />
+        </app-field>
+
+        <app-field label="Address" hint="Optional." [error]="errorFor('address')">
+          <input
+            type="text"
+            formControlName="address"
+            autocomplete="street-address"
+            [class]="inputClass"
+            placeholder="Km 9, Sasa, Davao City" />
+        </app-field>
+
+        <!--
+          Where the yard is, on a map.
+
+          The one field on this form that does something the company cannot
+          easily do for itself later: customers pick a haulier from the carriers
+          near their load, and that list is sorted by this pin. A company with
+          no pin is invisible to every shipper who does not already have its
+          phone number.
+
+          Optional, because whoever fills this in may be sitting nowhere near
+          the depot, and movable afterwards on the company card.
+        -->
+        <div class="flex flex-col gap-2">
+          <div class="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 class="text-[13px] font-semibold">Where is your yard?</h3>
+            @if (pin()) {
+              <span class="text-[12px] font-medium text-cr-blue">
+                Pinned — customers near you will see you
+              </span>
+            } @else {
+              <span class="text-[12px] text-cr-ink-muted">Optional, but it is how customers find you</span>
+            }
+          </div>
+
+          <p class="text-[13px] text-cr-ink-muted">
+            Search for the depot, or click the map. Customers in the app choose a
+            carrier from the ones nearest their load, and this is the point that
+            distance is measured from.
+          </p>
+
+          <app-map-picker [value]="pin()" (changed)="pinned($event)" />
+        </div>
+      </div>
+
+      <h2 class="mt-6 text-[13px] font-semibold text-cr-ink-muted">Your account</h2>
+      <p class="mt-1 text-[13px] text-cr-ink-muted">
+        You will be this company's administrator, and can add everyone else once
+        you are in.
+      </p>
+
+      <div class="mt-3 flex flex-col gap-4">
+        <app-field label="Full name" required [error]="errorFor('name')">
+          <input
+            type="text"
+            formControlName="name"
+            autocomplete="name"
+            [class]="inputClass"
+            placeholder="Ana Cruz" />
+        </app-field>
+
+        <app-field label="Email" required [error]="errorFor('email')">
+          <input
+            type="email"
+            formControlName="email"
+            autocomplete="username"
+            [class]="inputClass"
+            placeholder="you@yourcompany.ph" />
+        </app-field>
+
+        <app-field
+          label="Password"
+          required
+          hint="At least 8 characters."
+          [error]="errorFor('password')">
+          <input
+            type="password"
+            formControlName="password"
+            autocomplete="new-password"
+            [class]="inputClass"
+            placeholder="••••••••" />
+        </app-field>
+
+        <app-field
+          label="Confirm password"
+          required
+          [error]="errorFor('password_confirmation')">
+          <input
+            type="password"
+            formControlName="password_confirmation"
+            autocomplete="new-password"
+            [class]="inputClass"
+            placeholder="••••••••" />
+        </app-field>
+      </div>
+
+      <button
+        type="submit"
+        class="mt-6 h-10 w-full rounded-control bg-cr-blue text-[14px] font-semibold text-cr-surface transition-colors hover:bg-cr-blue-hover disabled:opacity-60"
+        [disabled]="submitting()">
+        {{ submitting() ? 'Creating your company…' : 'Create company' }}
+      </button>
+
+      <p class="mt-4 text-center text-[13px] text-cr-ink-muted">
+        Already have an account?
+        <a routerLink="/login" class="font-medium text-cr-blue hover:underline">Sign in</a>
+      </p>
+    </form>
+  </div>
+</div>

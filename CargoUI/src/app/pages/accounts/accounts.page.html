@@ -1,0 +1,96 @@
+<app-list-toolbar
+  [count]="rows()?.length ?? null"
+  singular="account"
+  plural="accounts"
+  actionLabel="Add account"
+  (add)="list.create()"
+/>
+
+<!-- What the chart is, before what is in it. Nobody opens this page daily, so
+     the two figures worth stating are how many accounts are in use and how many
+     have been retired — a retired one is still here, keeping its history. -->
+<div class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+  <app-card heading="In use" icon="tag">
+    <p class="cr-num text-[28px] leading-none font-semibold">{{ activeCount() }}</p>
+    <p class="cr-meta mt-1">accounts taking postings</p>
+  </app-card>
+
+  <app-card heading="Retired" icon="close">
+    <p class="cr-num text-[28px] leading-none font-semibold">{{ retiredCount() }}</p>
+    <p class="cr-meta mt-1">kept for their history</p>
+  </app-card>
+
+  <app-card heading="How this is numbered" icon="clipboard" class="sm:col-span-1">
+    <!-- The convention rather than a house style, and worth saying once on the
+         page: an accountant, an auditor and a BIR examiner all expect to find
+         cash in the 1000s. -->
+    <dl class="space-y-1 text-[12px] text-cr-ink-muted">
+      <div class="flex justify-between">
+        <dt>1000s</dt>
+        <dd>Assets</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt>2000s</dt>
+        <dd>Liabilities</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt>3000s</dt>
+        <dd>Equity</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt>4000s</dt>
+        <dd>Income</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt>5000s</dt>
+        <dd>Expenses</dd>
+      </div>
+    </dl>
+  </app-card>
+</div>
+
+@if (list.error(); as message) {
+  <app-error-state [message]="message" />
+} @else if (sections(); as groups) {
+  <!-- One card per kind, in the order a chart is read: assets, liabilities,
+       equity, income, expenses. Not one long table, because the kind is the
+       thing that decides how every figure in the section behaves — it is a
+       heading, not a column. -->
+  <div class="flex flex-col gap-4">
+    @for (section of groups; track section.type) {
+      <app-card [heading]="section.label" icon="tag" [padded]="false">
+        <button
+          card-actions
+          type="button"
+          class="ml-auto flex h-8 items-center gap-1 rounded-control px-2 text-[12px] font-semibold text-cr-ink-muted transition-colors hover:bg-cr-tint hover:text-cr-blue"
+          [attr.aria-expanded]="!isCollapsed(section.type)"
+          (click)="toggle(section.type)"
+        >
+          {{ section.rows.length }}
+          {{ section.rows.length === 1 ? 'account' : 'accounts' }}
+          <app-icon
+            [name]="isCollapsed(section.type) ? 'chevron-right' : 'chevron-left'"
+            [size]="14"
+          />
+        </button>
+
+        @if (!isCollapsed(section.type)) {
+          <app-data-table
+            [columns]="columns"
+            [rows]="section.rows"
+            [minWidth]="720"
+            rowAction="Edit account"
+            emptyIcon="tag"
+            emptyTitle="No accounts of this kind"
+            emptyBody="Add one and it will appear here."
+            (open)="list.edit($event)"
+          />
+        }
+      </app-card>
+    }
+  </div>
+} @else {
+  <app-card [padded]="false">
+    <app-data-table [columns]="columns" [rows]="null" />
+  </app-card>
+}

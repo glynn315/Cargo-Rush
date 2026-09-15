@@ -1,0 +1,104 @@
+<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+  <div class="rounded-card bg-cr-surface p-4 shadow-card ring-1 ring-cr-line/60">
+    <p class="cr-meta">Outstanding receivables</p>
+    <p class="cr-num mt-2 text-[28px] leading-none font-semibold">{{ fmt.money(receivable()) }}</p>
+    <p class="mt-1 text-[12px] text-cr-ink-muted">Money owed to Cargo Rush</p>
+  </div>
+  <div class="rounded-card bg-cr-surface p-4 shadow-card ring-1 ring-cr-line/60">
+    <p class="cr-meta">Collected</p>
+    <p class="cr-num mt-2 text-[28px] leading-none font-semibold text-cr-success">
+      {{ fmt.money(collected()) }}
+    </p>
+    <p class="mt-1 text-[12px] text-cr-ink-muted">Receivables settled</p>
+  </div>
+  <div class="rounded-card bg-cr-surface p-4 shadow-card ring-1 ring-cr-line/60">
+    <p class="cr-meta">Outstanding payables</p>
+    <p class="cr-num mt-2 text-[28px] leading-none font-semibold">{{ fmt.money(payable()) }}</p>
+    <p class="mt-1 text-[12px] text-cr-ink-muted">Money Cargo Rush owes</p>
+  </div>
+  <div class="rounded-card bg-cr-surface p-4 shadow-card ring-1 ring-cr-line/60">
+    <p class="cr-meta">Overdue</p>
+    <p class="cr-num mt-2 text-[28px] leading-none font-semibold text-cr-red">
+      {{ fmt.money(overdue()) }}
+    </p>
+    <p class="mt-1 text-[12px] text-cr-ink-muted">Past the due date</p>
+  </div>
+</div>
+
+<div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+  <app-list-toolbar
+    class="mb-0 block flex-1"
+    [count]="list.rows()?.length ?? null"
+    singular="invoice"
+    plural="invoices"
+    actionLabel="New invoice"
+    (add)="list.create()"
+  />
+
+  <!-- Money in, and the only way an invoice becomes paid: the status dropdown
+       that used to offer `paid` wrote the word with nothing behind it, and
+       every figure on this page is counted from the payments. -->
+  <button
+    type="button"
+    class="flex h-10 flex-none items-center gap-1.5 rounded-control bg-cr-success px-4 text-[14px] font-semibold text-cr-surface transition-colors hover:opacity-90"
+    (click)="recordPayment()"
+  >
+    <app-icon name="wallet" [size]="16" />
+    Record payment
+  </button>
+
+  <!-- The list as a spreadsheet, with the direction filter carried along: the
+       export somebody wants is the one they are looking at. All five tax
+       figures are in the file, because a total on its own cannot be reconciled
+       against a bank statement. -->
+  <button
+    type="button"
+    class="flex h-10 flex-none items-center gap-1.5 rounded-control px-4 text-[14px] font-semibold text-cr-blue ring-1 ring-cr-line transition-colors hover:bg-cr-tint"
+    (click)="exportList()"
+  >
+    <app-icon name="clipboard" [size]="16" />
+    Export CSV
+  </button>
+</div>
+
+<div>
+  <app-filter-bar
+    [options]="filters()"
+    [selected]="direction()"
+    label="Filter by direction"
+    (select)="direction.set($any($event))"
+  />
+</div>
+
+<app-card
+  heading="Payment history"
+  icon="billing"
+  hint="Consolidated trip billing"
+  [padded]="false"
+  class="mt-4 block"
+>
+  @if (list.error(); as message) {
+    <app-error-state [message]="message" (retry)="list.refresh()" />
+  } @else {
+    <!-- The row action opens the *document* rather than the edit form.
+
+         That is the swap worth explaining: an invoice is looked at far more
+         often than it is edited — a customer rings about a number, and what the
+         office needs is the printable copy with the haul and the payments on
+         it. Editing is still one tap further in, from the document's own
+         toolbar, where the consequences are in view. -->
+    <app-data-table
+      [columns]="columns"
+      [rows]="rows()"
+      [minWidth]="980"
+      rowAction="Open invoice"
+      [deletable]="true"
+      [rowLabel]="label"
+      emptyIcon="billing"
+      emptyTitle="No invoices in this view"
+      emptyBody="Switch the filter, or raise the first invoice for a completed trip."
+      (open)="openDocument($any($event))"
+      (remove)="list.remove($any($event))"
+    />
+  }
+</app-card>

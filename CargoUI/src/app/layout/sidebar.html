@@ -1,0 +1,173 @@
+<nav class="flex h-full flex-col rounded-panel bg-cr-surface shadow-panel" aria-label="Main">
+  <!--
+    1. Brand, then whose system this is.
+
+    The wordmark is the product; the line under it is the company signed in.
+    Both are needed now that one deployment serves many hauliers — a screen
+    that says only "Cargo Rush" cannot answer "whose fleet am I looking at",
+    which is the first thing anybody with access to two of them asks.
+
+    Collapsed, the name is a tooltip on the mark rather than truncated text in
+    a 48px rail, where it would read as three letters and a fade.
+  -->
+  <div class="flex flex-col px-4 py-4" [class.items-center]="collapsed()">
+    @if (collapsed()) {
+      <!--
+        Collapsed, the company's mark replaces the product's.
+
+        The rail is 48px and holds one image. Of the two, the one worth keeping
+        is the one that differs between tabs: whoever is looking at this knows
+        they are in Cargo Rush, and what they cannot tell at a glance is which
+        company. The title carries the name, since there is no room to print it.
+      -->
+      @if (companyLogo(); as logo) {
+        <img
+          [src]="logo"
+          alt=""
+          [attr.title]="company()"
+          width="28"
+          height="28"
+          class="h-7 w-7 rounded-control object-contain"
+        />
+      } @else {
+        <app-wordmark variant="mark" [size]="20" [attr.title]="company()" />
+      }
+    } @else {
+      <!-- 240px panel less its 16px padding either side. The lockup sizes
+           itself to that rather than being given a number that has to be
+           re-checked whenever the sidebar width changes. -->
+      <app-wordmark [maxWidth]="208" />
+
+      <!--
+        Whose system this is, under the product's own name.
+
+        The mark is drawn at 32px from a 64px file, which is what keeps it crisp
+        on a retina screen. `object-contain` rather than `cover`: a logo is not
+        a photograph, and cropping one to fill a box cuts the top off somebody's
+        wordmark. The square it sits in is already the shape the server cropped
+        it to.
+      -->
+      @if (company(); as name) {
+        <div class="mt-2.5 flex min-w-0 items-center gap-2">
+          @if (companyLogo(); as logo) {
+            <img
+              [src]="logo"
+              alt=""
+              width="32"
+              height="32"
+              class="h-8 w-8 flex-none rounded-control object-contain"
+            />
+          } @else {
+            <!-- No logo is ordinary — most companies add one later. Initials,
+                 the same fallback the user chip makes for a missing avatar. -->
+            <span
+              class="flex h-8 w-8 flex-none items-center justify-center rounded-control bg-cr-tint text-[11px] font-semibold text-cr-blue"
+            >
+              {{ companyInitials() }}
+            </span>
+          }
+          <p
+            class="min-w-0 truncate text-[12px] font-semibold text-cr-ink-muted"
+            [attr.title]="name"
+          >
+            {{ name }}
+          </p>
+        </div>
+      } @else {
+        <div class="mt-2.5 flex items-center gap-2" role="status" aria-label="Loading company">
+          <div class="cr-skeleton h-8 w-8 flex-none rounded-control"></div>
+          <div class="cr-skeleton h-2.5 w-24"></div>
+        </div>
+      }
+    }
+  </div>
+  <div class="mx-4 border-b border-cr-line"></div>
+
+  <!-- 2. Nav — grows, scrolls internally -->
+  <div class="cr-scroll min-h-0 flex-1 px-3 py-3">
+    @if (groups(); as sections) {
+      @for (section of sections; track section.name) {
+        @if (!collapsed()) {
+          <p class="cr-meta px-3 pt-3 pb-1.5 first:pt-0">{{ section.name }}</p>
+        } @else if (!$first) {
+          <div class="mx-2 my-2 border-t border-cr-line"></div>
+        }
+        <ul class="flex flex-col gap-1">
+          @for (item of section.items; track item.key) {
+            <li>
+              <a
+                [routerLink]="item.route"
+                routerLinkActive
+                #rla="routerLinkActive"
+                (click)="navigate.emit()"
+                [attr.aria-current]="rla.isActive ? 'page' : null"
+                [attr.title]="collapsed() ? item.label : null"
+                class="relative flex h-10 items-center rounded-control px-3 transition-colors"
+                [class.justify-center]="collapsed()"
+                [class.bg-cr-tint]="rla.isActive"
+                [class.text-cr-blue]="rla.isActive"
+                [class.text-cr-ink]="!rla.isActive"
+                [class.hover:bg-cr-tint]="!rla.isActive"
+              >
+                <!-- 3px active bar on the left edge -->
+                @if (rla.isActive) {
+                  <span class="absolute left-0 h-5 w-[3px] rounded-r-full bg-cr-blue"></span>
+                }
+                <app-icon
+                  [name]="item.icon"
+                  [size]="20"
+                  [class.text-cr-blue]="rla.isActive"
+                  [class.text-cr-ink-muted]="!rla.isActive"
+                />
+                @if (!collapsed()) {
+                  <span
+                    class="ml-3 min-w-0 flex-1 truncate text-[14px]"
+                    [class.font-semibold]="rla.isActive"
+                  >
+                    {{ item.label }}
+                  </span>
+                  @if (item.badge) {
+                    <span
+                      class="cr-num ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                      [class.bg-cr-blue]="rla.isActive"
+                      [class.text-cr-surface]="rla.isActive"
+                      [class.bg-cr-tint]="!rla.isActive"
+                      [class.text-cr-blue]="!rla.isActive"
+                    >
+                      {{ item.badge }}
+                    </span>
+                  }
+                } @else if (item.badge) {
+                  <span
+                    class="absolute top-1.5 right-2 h-2 w-2 rounded-full bg-cr-red ring-2 ring-cr-surface"
+                    [attr.aria-label]="item.badge + ' pending'"
+                  ></span>
+                }
+              </a>
+            </li>
+          }
+        </ul>
+      }
+    } @else {
+      <div class="flex flex-col gap-2 px-1" role="status" aria-label="Loading navigation">
+        @for (row of skeletonRows; track row) {
+          <div class="cr-skeleton h-10"></div>
+        }
+      </div>
+    }
+  </div>
+
+  <!--
+    3. The account chip, pinned to the bottom.
+
+    A menu rather than a bare button. It used to *be* the sign-out — a name, a
+    job title and a chevron, announced as "Sign out …" and looking like every
+    profile menu ever drawn, so people clicked it expecting one and got nothing
+    they could see. `AccountMenu` is what the chevron was promising: who you
+    are, change password, and a sign-out that says so in words.
+  -->
+  <div class="mx-4 border-t border-cr-line"></div>
+  <div class="p-4">
+    <app-account-menu [collapsed]="collapsed()" />
+  </div>
+</nav>

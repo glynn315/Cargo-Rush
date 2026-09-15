@@ -1,0 +1,271 @@
+<div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+  <!-- Three views, as a segmented control rather than three pages: they are the
+       same postings answered three ways, and switching between them keeps the
+       dates and the chosen account. -->
+  <div class="flex h-10 items-center gap-1 rounded-control bg-cr-tint p-1" role="tablist">
+    <button
+      type="button"
+      role="tab"
+      [attr.aria-selected]="view() === 'chart'"
+      class="h-8 rounded-[6px] px-3 text-[13px] font-semibold transition-colors"
+      [class]="view() === 'chart' ? 'bg-cr-surface text-cr-ink shadow-card' : 'text-cr-ink-muted'"
+      (click)="setView('chart')"
+    >
+      Chart
+    </button>
+    <button
+      type="button"
+      role="tab"
+      [attr.aria-selected]="view() === 'account'"
+      class="h-8 rounded-[6px] px-3 text-[13px] font-semibold transition-colors"
+      [class]="view() === 'account' ? 'bg-cr-surface text-cr-ink shadow-card' : 'text-cr-ink-muted'"
+      (click)="setView('account')"
+    >
+      Account
+    </button>
+    <button
+      type="button"
+      role="tab"
+      [attr.aria-selected]="view() === 'trial'"
+      class="h-8 rounded-[6px] px-3 text-[13px] font-semibold transition-colors"
+      [class]="view() === 'trial' ? 'bg-cr-surface text-cr-ink shadow-card' : 'text-cr-ink-muted'"
+      (click)="setView('trial')"
+    >
+      Trial balance
+    </button>
+  </div>
+
+  <div class="flex flex-wrap items-end gap-3">
+    <app-field label="Account">
+      <select
+        [class]="inputClass"
+        [value]="accountId()"
+        (change)="chooseAccount($any($event.target).value)"
+      >
+        <option value="">Choose an account…</option>
+        @for (account of pickable(); track account.id) {
+          <option [value]="account.id">{{ account.label }}</option>
+        }
+      </select>
+    </app-field>
+
+    <app-field label="From">
+      <input
+        type="date"
+        [class]="inputClass"
+        [value]="from()"
+        (change)="setRange('from', $any($event.target).value)"
+      />
+    </app-field>
+
+    <app-field label="To">
+      <input
+        type="date"
+        [class]="inputClass"
+        [value]="to()"
+        (change)="setRange('to', $any($event.target).value)"
+      />
+    </app-field>
+  </div>
+</div>
+
+@if (error(); as message) {
+  <app-error-state [message]="message" />
+} @else if (view() === 'chart') {
+  <!-- Every account and what it stands at, grouped by kind in the order a chart
+       is read. The subtotal per kind is the point: "what are my expenses" is
+       the question a list of forty accounts cannot answer on its own. -->
+  @if (summary(); as chart) {
+    <div class="flex flex-col gap-4">
+      @for (type of chart.types; track type.type) {
+        @if (type.accounts.length > 0) {
+          <app-card
+            [heading]="type.label"
+            icon="wallet"
+            [hint]="fmt.money(type.balance_cents, chart.currency)"
+            [padded]="false"
+          >
+            <div class="flex flex-col divide-y divide-cr-line/70">
+              @for (account of type.accounts; track account.id) {
+                <button
+                  type="button"
+                  class="flex items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-cr-tint"
+                  (click)="chooseAccount(account.id)"
+                >
+                  <span class="cr-num w-16 flex-none text-[13px] font-semibold">{{
+                    account.code
+                  }}</span>
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate text-[13px]">{{ account.name }}</span>
+                    @if (account.group) {
+                      <span class="block text-[12px] text-cr-ink-muted">{{ account.group }}</span>
+                    }
+                  </span>
+                  @if (account.status !== 'active') {
+                    <span class="text-[12px] text-cr-ink-muted">retired</span>
+                  }
+                  <span class="cr-num text-[13px] font-semibold">
+                    {{ fmt.money(account.balance_cents, chart.currency) }}
+                  </span>
+                  <app-icon name="chevron-right" [size]="16" class="text-cr-ink-muted" />
+                </button>
+              }
+            </div>
+          </app-card>
+        }
+      }
+    </div>
+  } @else {
+    <app-card [padded]="false">
+      <app-data-table [columns]="trialColumns" [rows]="null" />
+    </app-card>
+  }
+} @else if (view() === 'account') {
+  @if (accountId() === '') {
+    <app-card>
+      <div class="flex flex-col items-center gap-2 py-10 text-center">
+        <app-icon name="wallet" [size]="28" class="text-cr-ink-muted" />
+        <h3 class="text-[15px] font-semibold">Choose an account</h3>
+        <p class="max-w-sm text-[13px] text-cr-ink-muted">
+          Pick one above, or tap a row on the Chart. You will get its opening balance, every posting
+          in the range and a running balance.
+        </p>
+      </div>
+    </app-card>
+  } @else if (account(); as page) {
+    <!-- The four figures a ledger page is read for, before the postings
+         themselves: where it started, what moved each way, and where it ended. -->
+    <div class="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <app-card heading="Opening" icon="calendar">
+        <p class="cr-num text-[22px] leading-none font-semibold">
+          {{ fmt.money(page.opening_balance_cents, page.currency) }}
+        </p>
+        <p class="cr-meta mt-1">
+          @if (page.range.from) {
+            before {{ fmt.date(page.range.from) }}
+          } @else {
+            from the beginning
+          }
+        </p>
+      </app-card>
+
+      <app-card heading="Debits" icon="trend">
+        <p class="cr-num text-[22px] leading-none font-semibold">
+          {{ fmt.money(page.debit_cents, page.currency) }}
+        </p>
+        <p class="cr-meta mt-1">
+          {{ page.account.normal_balance === 'debit' ? 'increases this account' : 'reduces it' }}
+        </p>
+      </app-card>
+
+      <app-card heading="Credits" icon="trend">
+        <p class="cr-num text-[22px] leading-none font-semibold">
+          {{ fmt.money(page.credit_cents, page.currency) }}
+        </p>
+        <p class="cr-meta mt-1">
+          {{ page.account.normal_balance === 'credit' ? 'increases this account' : 'reduces it' }}
+        </p>
+      </app-card>
+
+      <app-card heading="Closing" icon="wallet">
+        <p class="cr-num text-[22px] leading-none font-semibold">
+          {{ fmt.money(page.closing_balance_cents, page.currency) }}
+        </p>
+        <p class="cr-meta mt-1">
+          {{ page.entry_count }} {{ page.entry_count === 1 ? 'entry' : 'entries' }}
+        </p>
+      </app-card>
+    </div>
+
+    <app-card
+      [heading]="page.account.code + ' · ' + page.account.name"
+      icon="clipboard"
+      [hint]="page.account.type_label"
+      [padded]="false"
+    >
+      <app-data-table
+        [columns]="ledgerColumns"
+        [rows]="page.lines"
+        [minWidth]="860"
+        emptyIcon="clipboard"
+        emptyTitle="No postings in this range"
+        emptyBody="Widen the dates, or write an entry in the General Journal."
+      />
+    </app-card>
+
+    @if (!page.account.type || page.account.type === 'income' || page.account.type === 'expense') {
+      <!-- Said where it matters rather than in a manual: an income or expense
+           account is the story of one period and starts again, which is why its
+           opening balance is zero however far back the range goes. -->
+      <p class="mt-3 text-[12px] text-cr-ink-muted">
+        {{ page.account.type_label }} accounts start each period at nothing — that is what closing
+        the books means, so there is no balance carried in from before this range.
+      </p>
+    }
+  } @else {
+    <app-card [padded]="false">
+      <app-data-table [columns]="ledgerColumns" [rows]="null" />
+    </app-card>
+  }
+} @else {
+  @if (trial(); as tb) {
+    <!-- The whole report is the last line: do the two columns agree? Stated
+         first, in words, because a person should not have to add up two columns
+         of figures to find out. -->
+    <app-card
+      [heading]="tb.balanced ? 'The books balance' : 'The books do not balance'"
+      [icon]="tb.balanced ? 'check' : 'incident'"
+      [hint]="'as of ' + fmt.date(tb.as_of)"
+    >
+      <div class="flex flex-wrap items-end gap-8">
+        <div>
+          <p class="cr-meta">Debits</p>
+          <p class="cr-num text-[24px] leading-none font-semibold">
+            {{ fmt.money(tb.debit_total_cents, tb.currency) }}
+          </p>
+        </div>
+        <div>
+          <p class="cr-meta">Credits</p>
+          <p class="cr-num text-[24px] leading-none font-semibold">
+            {{ fmt.money(tb.credit_total_cents, tb.currency) }}
+          </p>
+        </div>
+        <div>
+          <p class="cr-meta">Difference</p>
+          <p
+            class="cr-num text-[24px] leading-none font-semibold"
+            [class.text-cr-red]="!tb.balanced"
+            [class.text-cr-success]="tb.balanced"
+          >
+            {{ fmt.money(tb.difference_cents, tb.currency) }}
+          </p>
+        </div>
+      </div>
+
+      <p class="mt-3 max-w-2xl text-[12px] text-cr-ink-muted">
+        @if (tb.balanced) {
+          Every entry has equal sides, so the two columns agree. Accounts that net to nothing are
+          left off — their postings are on their own ledger page.
+        } @else {
+          A difference here means something reached the postings without going through the journal.
+          Nothing in the app can do that, so this is worth raising rather than adjusting.
+        }
+      </p>
+    </app-card>
+
+    <app-card class="mt-4" heading="Account by account" icon="wallet" [padded]="false">
+      <app-data-table
+        [columns]="trialColumns"
+        [rows]="tb.rows"
+        [minWidth]="820"
+        emptyIcon="wallet"
+        emptyTitle="Nothing posted yet"
+        emptyBody="Post an entry in the General Journal and it will appear here."
+      />
+    </app-card>
+  } @else {
+    <app-card [padded]="false">
+      <app-data-table [columns]="trialColumns" [rows]="null" />
+    </app-card>
+  }
+}

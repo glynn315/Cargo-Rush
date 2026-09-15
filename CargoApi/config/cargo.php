@@ -1,0 +1,442 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * The business's own numbers — the ones a bookkeeper changes, not a developer.
+ *
+ * Two things in this system are worked out rather than typed: what a haul is
+ * charged at, and when the invoice for it falls due. Both used to be a figure
+ * somebody keyed in per trip, which is why the same run could be billed two
+ * different amounts by two different people. The rates that replace that
+ * judgement live here so they can be corrected in one place, per install,
+ * without touching the code that applies them.
+ *
+ * Money is integer centavos throughout (DESIGN.md section 7.1).
+ */
+return [
+
+    /*
+    |----------------------------------------------------------------------
+    | Tariff — what a delivery is charged
+    |----------------------------------------------------------------------
+    |
+    | price = base + (per_km * km) + (per_kg * kg), floored at `minimum`.
+    |
+    | Distance comes off the trip, which fills it in from the two map pins
+    | (straight-line, so it is a floor) or takes the road distance a
+    | dispatcher entered. A trip nobody has pinned has no distance, and the
+    | quote is then base plus weight alone — honest, and still not zero.
+    |
+    | `PricingService` is the only thing that reads these.
+    |
+    */
+    'tariff' => [
+        'base_cents' => (int) env('TARIFF_BASE_CENTS', 150_000),
+        'per_km_cents' => (int) env('TARIFF_PER_KM_CENTS', 3_500),
+        'per_kg_cents' => (int) env('TARIFF_PER_KG_CENTS', 200),
+        'minimum_cents' => (int) env('TARIFF_MINIMUM_CENTS', 150_000),
+        'currency' => env('TARIFF_CURRENCY', 'PHP'),
+    ],
+
+    /*
+    |----------------------------------------------------------------------
+    | Diesel — how pump price moves a quote
+    |----------------------------------------------------------------------
+    |
+    | A rate card is drawn at some assumed fuel price. When the pump moves, the
+    | whole card is wrong by roughly the fuel share of the run, and the choice
+    | is between retyping every bracket or deriving the difference. This is the
+    | second one:
+    |
+    |     move       = (today - baseline) / baseline
+    |     adjustment = clamp(move * sensitivity, -cap, +cap)
+    |     price      = bracket price * (1 + adjustment)
+    |
+    | `baseline_cents` is the pump price the brackets were priced at. A zone may
+    | override it; most installs buy fuel at one price and never will.
+    |
+    | `sensitivity` is the fuel share of a run — how much of the price actually
+    | is diesel. At 0.35, a 10% pump rise moves the quote 3.5%, not 10%. Passing
+    | the whole move through would overcharge, because salary, tyres and the
+    | office did not get more expensive.
+    |
+    | `cap_bp` is the guard rail, in basis points. Whatever the pump does, a
+    | quote does not move more than this from the card without somebody
+    | deciding to redraw it — a bad `baseline_cents` should produce a visibly
+    | capped figure, not a bill nobody can explain.
+    |
+    */
+    'diesel' => [
+        'baseline_cents' => (int) env('DIESEL_BASELINE_CENTS', 6_500),
+        'sensitivity' => (float) env('DIESEL_SENSITIVITY', 0.35),
+        'cap_bp' => (int) env('DIESEL_CAP_BP', 2_500),
+    ],
+
+    /*
+    |----------------------------------------------------------------------
+    | Tax
+    |----------------------------------------------------------------------
+    |
+    | What a Philippine freight invoice actually carries, and the reason an
+    | invoice total was never the number anybody paid:
+    |
+    |     net                    the haul, priced from the tariff
+    |   + VAT      (12%)         charged to the customer, remitted by us
+    |   = gross                  what the invoice says
+    |   - withholding (2%)       kept back by the customer, remitted by them
+    |   = due                    what actually lands in the bank
+    |
+    | **Both are defaults, not law.** Rates change by statute, a company may
+    | not be VAT-registered, and whether a customer withholds depends on
+    | whether they are a withholding agent — so the company and the customer
+    | each override these, and the invoice freezes whatever applied on the day
+    | it was raised. See `TaxService`.
+    |
+    | Basis points, like the diesel adjustment, so 12% is 1200 and there is no
+    | float anywhere near a peso.
+    |
+    */
+    'tax' => [
+        /** VAT on sales. 1200 = 12%, the standard PH rate. */
+        'vat_rate_bp' => (int) env('TAX_VAT_RATE_BP', 1200),
+
+        /**
+         * Expanded withholding tax on payments to contractors.
+         *
+         * 200 = 2%, which is the rate for hauling and freight services. It is
+         * withheld from the **gross** — VAT included — because that is how the
+         * BIR computes it, and getting that wrong understates the deduction on
+         * every invoice.
+         */
+        'withholding_rate_bp' => (int) env('TAX_WITHHOLDING_RATE_BP', 200),
+
+        /**
+         * Are the tariff and the rate card quoted VAT-inclusive?
+         *
+         * False out of the box: a quote is the net haul and VAT is added on
+         * top, which is how a rate card is normally written. Set it true where
+         * the desk quotes customers a single all-in figure — then the price is
+         * treated as gross and the VAT inside it is worked backwards, so the
+         * customer is billed exactly what they were quoted.
+         *
+         * This changes what every future invoice says. It does not touch a
+         * document already issued.
+         */
+        'prices_include_vat' => (bool) env('TAX_PRICES_INCLUDE_VAT', false),
+    ],
+
+    /*
+    |----------------------------------------------------------------------
+    | The pre-trip check
+    |----------------------------------------------------------------------
+    |
+    | DESIGN.md section 5.2 puts a checklist on the handset before a run: tyres,
+    | oil, gears, brakes, lights, coolant, documents. `InspectionService` owns
+    | the list itself and which of those are critical — that is a contract
+    | between the screen and every result already stored, not a setting.
+    |
+    | What is a setting is whether the check *stops* a departure.
+    |
+    */
+    /*
+    |----------------------------------------------------------------------
+    | Payroll
+    |----------------------------------------------------------------------
+    |
+    | The statutory deductions, and a warning worth reading before trusting
+    | them: **these rates change, and they change by circular rather than by
+    | law.** SSS, PhilHealth and Pag-IBIG have all moved in the last few years,
+    | and the BIR's withholding table moved with the TRAIN schedule in 2023.
+    |
+    | So they live here, in configuration, with the values that were current
+    | when this was written — and every one of them should be checked against
+    | the agency's own circular before a first live run. A payroll module that
+    | hid its rates in code would be wrong within a year and impossible to
+    | correct without a deployment.
+    |
+    | The percentages are basis points (450 = 4.5%), like every other rate in
+    | this system, so there is no float near a peso.
+    |
+    */
+    'payroll' => [
+        /**
+         * How many pay runs a month, which decides how a monthly contribution
+         * is split across them.
+         *
+         * Two is the Philippine norm — the 15th and the end of the month — and
+         * the contributions below are monthly figures halved onto each run. An
+         * office paying monthly sets this to 1 and the full contribution lands
+         * on the single run.
+         */
+        'runs_per_month' => (int) env('PAYROLL_RUNS_PER_MONTH', 2),
+
+        /*
+         * Which cutoff the monthly contributions come off is NOT here.
+         *
+         * It is `companies.payroll_deduct_on`, because it is a policy rather
+         * than a rate: the SSS percentage below is the government's and is the
+         * same for every firm on this platform, while whether a firm loads a
+         * month of contributions onto the first payslip or the second differs
+         * between two companies in the same yard and has to be changeable
+         * without a deployment. See `DeductionSchedule`.
+         */
+
+        /**
+         * SSS, the employee's share.
+         *
+         * The real schedule is a bracketed table of monthly salary credits, not
+         * a flat percentage — this is the percentage-with-a-cap simplification
+         * every small office starts with, and it is close for salaries in the
+         * middle of the range and wrong at the ends. A fleet running its own
+         * payroll properly should replace this with the table; the deduction is
+         * editable on the line either way.
+         */
+        'sss' => [
+            'employee_rate_bp' => (int) env('PAYROLL_SSS_RATE_BP', 450),
+            /** The monthly salary credit ceiling the rate applies up to. */
+            'ceiling_cents' => (int) env('PAYROLL_SSS_CEILING_CENTS', 3500000),
+        ],
+
+        /**
+         * PhilHealth: 5% of the monthly basic, split evenly between employer
+         * and employee — so 2.5% comes off the payslip, between a floor and a
+         * ceiling on the salary it is computed from.
+         */
+        'philhealth' => [
+            'employee_rate_bp' => (int) env('PAYROLL_PHILHEALTH_RATE_BP', 250),
+            'floor_cents' => (int) env('PAYROLL_PHILHEALTH_FLOOR_CENTS', 1000000),
+            'ceiling_cents' => (int) env('PAYROLL_PHILHEALTH_CEILING_CENTS', 10000000),
+        ],
+
+        /**
+         * Pag-IBIG: 2% of the monthly basic, capped — the cap is what most
+         * payslips actually show, since it binds at a low salary.
+         */
+        'pagibig' => [
+            'employee_rate_bp' => (int) env('PAYROLL_PAGIBIG_RATE_BP', 200),
+            'cap_cents' => (int) env('PAYROLL_PAGIBIG_CAP_CENTS', 20000),
+        ],
+
+        /**
+         * Withholding tax, as the BIR's **semi-monthly** graduated table.
+         *
+         * `over` is the taxable pay for the period above which the bracket
+         * applies, `base` is the fixed tax at that point, and `rate_bp` is what
+         * the excess is taxed at. Taxable pay is the gross less the statutory
+         * contributions, which is the order the BIR computes it in — deducting
+         * tax before the contributions would overstate it on every payslip.
+         *
+         * These are the 2023-onward TRAIN figures. Check them.
+         */
+        'withholding' => [
+            /**
+             * The salary range that pays no income tax at all.
+             *
+             * ₱250,000 a year is exempt under TRAIN, which is ₱20,833.33 a
+             * month — so somebody at or below this earns nothing taxable and
+             * should never see a withholding line, whatever a single fortnight
+             * happens to look like.
+             *
+             * Checked against the **monthly basic**, deliberately, and not
+             * against the period's gross. A person on ₱20,000 a month who gets
+             * a ₱3,000 allowance in one fortnight is not suddenly a taxpayer
+             * for that fortnight: their salary decides whether they are taxed,
+             * and the bracket table below only decides how much once they are.
+             * Applying the table alone would tax that allowance and make
+             * payroll look arbitrary to the person receiving it.
+             *
+             * Set to 0 to disable the check and let the bracket table decide on
+             * its own.
+             */
+            'exempt_monthly_at_or_below_cents' => (int) env('PAYROLL_TAX_EXEMPT_MONTHLY_CENTS', 2083333),
+
+            'brackets' => [
+                ['over' => 0, 'base' => 0, 'rate_bp' => 0],
+                ['over' => 1041700, 'base' => 0, 'rate_bp' => 1500],
+                ['over' => 1666700, 'base' => 93750, 'rate_bp' => 2000],
+                ['over' => 3333300, 'base' => 427160, 'rate_bp' => 2500],
+                ['over' => 5416700, 'base' => 947920, 'rate_bp' => 3000],
+                ['over' => 10416700, 'base' => 2447920, 'rate_bp' => 3200],
+                ['over' => 34166700, 'base' => 10047920, 'rate_bp' => 3500],
+            ],
+        ],
+
+        /**
+         * The accounts a paid run posts to, by code from the seeded chart.
+         *
+         * Salaries to expense, each agency's share to its own payable, and the
+         * net to cash — which is what makes payroll part of the books rather
+         * than a spreadsheet beside them. An install that renumbered its chart
+         * sets these; a run whose accounts are missing is reported rather than
+         * posted, because a half-posted payroll is worse than an unposted one.
+         */
+        'accounts' => [
+            'salaries_expense' => env('PAYROLL_ACCOUNT_SALARIES', '5200'),
+            'accrued_wages' => env('PAYROLL_ACCOUNT_ACCRUED', '2100'),
+            'statutory_payable' => env('PAYROLL_ACCOUNT_STATUTORY', '2200'),
+            'withholding_payable' => env('PAYROLL_ACCOUNT_WITHHOLDING', '2160'),
+            'cash' => env('PAYROLL_ACCOUNT_CASH', '1020'),
+        ],
+    ],
+
+    /*
+    |----------------------------------------------------------------------
+    | The books
+    |----------------------------------------------------------------------
+    */
+    'accounting' => [
+        /**
+         * Which expense group is the cost of actually hauling.
+         *
+         * The income statement measures gross profit against it — revenue less
+         * the cost of providing the service, which for a fleet is the one
+         * figure that says whether the hauling itself pays before the office is
+         * paid for. It is an `accounts.group` label, and the seeded chart uses
+         * this one.
+         *
+         * An install that renames the group gets **no** gross profit rather
+         * than a wrong one. That is the right failure: a margin computed
+         * against the wrong half of the expenses is worse than no margin.
+         */
+        'cost_of_services_group' => env('ACCOUNTING_COST_GROUP', 'Cost of services'),
+    ],
+
+    'inspection' => [
+        /**
+         * Must a unit pass its pre-trip check before the run can start?
+         *
+         * True, and it is the honest default: a checklist with no consequence
+         * is a form, and the fleet that installed this asked for a check rather
+         * than a form. A driver who skips it is told to run it and where.
+         *
+         * The switch exists for the two cases where an outright block is the
+         * wrong answer — an install piloting the handset with half its drivers
+         * still on paper, and a yard whose checks are recorded in a system this
+         * one does not talk to yet. Turning it off does not stop the check
+         * being recorded or shown; it stops it being a gate.
+         */
+        'required_before_start' => (bool) env('INSPECTION_REQUIRED_BEFORE_START', true),
+    ],
+
+    /*
+    |----------------------------------------------------------------------
+    | Billing terms
+    |----------------------------------------------------------------------
+    |
+    | How long a delivered run's receivable has to run before it is overdue.
+    | `cargo:invoices-overdue` reads the date, not this value, so changing it
+    | only affects invoices raised from here on.
+    |
+    */
+    'billing' => [
+        'terms_days' => (int) env('BILLING_TERMS_DAYS', 30),
+    ],
+
+    /*
+    |----------------------------------------------------------------------
+    | Customer portal logins
+    |----------------------------------------------------------------------
+    |
+    | The password a customer account is created with when the office adds the
+    | firm in Customer Management. A customer has to be able to sign in and
+    | book their own work from the moment they are on the books, and the desk
+    | has nothing to hand them if the account is made without one.
+    |
+    | It is a starting password and the same for every customer, so it is not a
+    | secret: the create response prints it once so whoever added the firm can
+    | pass it on, and the customer is expected to change it. Set it per install
+    | rather than leaving the value published in a repository.
+    |
+    */
+    'portal' => [
+        'default_password' => (string) env('CUSTOMER_DEFAULT_PASSWORD', 'cargorush123'),
+    ],
+
+    /*
+    |----------------------------------------------------------------------
+    | Proof of delivery
+    |----------------------------------------------------------------------
+    |
+    | Where the photograph taken at the door is kept. The `public` disk needs
+    | `php artisan storage:link` once per install, or the stored URL resolves
+    | to nothing.
+    |
+    */
+    'pod' => [
+        'disk' => env('POD_DISK', 'public'),
+        'directory' => env('POD_DIRECTORY', 'pod'),
+        /** Kilobytes. A phone photo is ~2–4 MB; this leaves room without inviting video. */
+        'max_kb' => (int) env('POD_MAX_KB', 8192),
+    ],
+
+    /*
+    |----------------------------------------------------------------------
+    | The company's logo
+    |----------------------------------------------------------------------
+    |
+    | Every upload is normalised to a square PNG of `logo_px` on a side and
+    | stored at that size — the client's original is never kept. Three reasons,
+    | and the last is the one that matters:
+    |
+    |   The sidebar renders it at a fixed 32px. A 2400px original would be four
+    |   megabytes shipped to draw a thumbnail, on every page load, for every
+    |   person in the company.
+    |
+    |   One size and one format means no client has to guess what it is about to
+    |   render, and a JPEG with a white box behind a transparent-looking mark
+    |   cannot slip through.
+    |
+    |   64 is 32 at twice the density. A logo stored at exactly its display size
+    |   is soft on every laptop made in the last decade; storing 2× and drawing
+    |   at 1× is what makes it crisp. Raise this to 128 if the mark ever needs
+    |   to appear larger than 64px anywhere.
+    |
+    | `max_kb` bounds the *upload*, not the result — the stored file is a 64px
+    | PNG and will be a few kilobytes whatever arrives. It is there so a
+    | mis-picked 40MB scan is refused before it is decoded rather than after.
+    |
+    | The `public` disk needs `php artisan storage:link` once per install, or
+    | the stored URL resolves to nothing.
+    |
+    */
+    'company' => [
+        'disk' => env('COMPANY_DISK', 'public'),
+        'directory' => env('COMPANY_DIRECTORY', 'companies'),
+        'logo_px' => (int) env('COMPANY_LOGO_PX', 64),
+        'logo_max_kb' => (int) env('COMPANY_LOGO_MAX_KB', 4096),
+    ],
+
+    /*
+    |----------------------------------------------------------------------
+    | People — staff photographs and CVs
+    |----------------------------------------------------------------------
+    |
+    | Its own disk setting rather than sharing the proof-of-delivery one,
+    | because these are personnel files. An install that later moves employee
+    | records onto private storage — which is where they belong once there is
+    | anywhere to put them — should not have to move every delivery photograph
+    | with them.
+    |
+    | The `public` disk needs `php artisan storage:link` once per install, or
+    | the stored URL resolves to nothing.
+    |
+    */
+    'hr' => [
+        'disk' => env('HR_DISK', 'public'),
+        'directory' => env('HR_DIRECTORY', 'people'),
+        /** Kilobytes. An ID photograph, not a portrait session. */
+        'photo_max_kb' => (int) env('HR_PHOTO_MAX_KB', 4096),
+        /** A CV is a PDF or a scan; a few megabytes covers both. */
+        'resume_max_kb' => (int) env('HR_RESUME_MAX_KB', 8192),
+        /**
+         * The password a staff account is created with from the roster.
+         *
+         * The same trade as the customer portal's, made for the same reason:
+         * somebody adding a new hire has to be able to hand them credentials
+         * that afternoon. It is a starting password, not a secret — the create
+         * response prints it once, and the account is expected to change it.
+         */
+        'default_password' => (string) env('STAFF_DEFAULT_PASSWORD', 'cargorush123'),
+    ],
+];

@@ -1,0 +1,761 @@
+<!--
+  The four statements.
+
+  Two audiences on one page. On screen it is a report with a segmented control
+  and a couple of date fields above it; on paper it is the statement, and
+  nothing else. The `cr-no-print` toolbar disappears, the card becomes the
+  page, and the sheet gets the margins a printer expects rather than the app's.
+-->
+<style>
+  @media print {
+    /* On paper the card is the page. A shadow and a rounded border printed
+       around a document look like a mistake, and the ring eats toner. */
+    .cr-sheet {
+      box-shadow: none !important;
+      border: 0 !important;
+      outline: 0 !important;
+      max-width: none !important;
+      --tw-ring-shadow: 0 0 #0000 !important;
+    }
+
+    /* A statement whose totals are on the second sheet is one somebody has to
+       reassemble before they can read it. */
+    .cr-totals,
+    .cr-aging {
+      break-inside: avoid;
+    }
+
+    @page {
+      margin: 14mm;
+    }
+  }
+</style>
+
+<div class="cr-no-print mb-4 flex flex-wrap items-end justify-between gap-3">
+  <!-- Four views, as a segmented control rather than four pages: they are the
+       same books answered four ways, and switching between them keeps the
+       dates and the direction. -->
+  <div class="flex h-10 items-center gap-1 rounded-control bg-cr-tint p-1" role="tablist">
+    <button
+      type="button"
+      role="tab"
+      [attr.aria-selected]="view() === 'income'"
+      class="h-8 rounded-[6px] px-3 text-[13px] font-semibold transition-colors"
+      [class]="view() === 'income' ? 'bg-cr-surface text-cr-ink shadow-card' : 'text-cr-ink-muted'"
+      (click)="setView('income')"
+    >
+      Income
+    </button>
+    <button
+      type="button"
+      role="tab"
+      [attr.aria-selected]="view() === 'sheet'"
+      class="h-8 rounded-[6px] px-3 text-[13px] font-semibold transition-colors"
+      [class]="view() === 'sheet' ? 'bg-cr-surface text-cr-ink shadow-card' : 'text-cr-ink-muted'"
+      (click)="setView('sheet')"
+    >
+      Balance sheet
+    </button>
+    <button
+      type="button"
+      role="tab"
+      [attr.aria-selected]="view() === 'aging'"
+      class="h-8 rounded-[6px] px-3 text-[13px] font-semibold transition-colors"
+      [class]="view() === 'aging' ? 'bg-cr-surface text-cr-ink shadow-card' : 'text-cr-ink-muted'"
+      (click)="setView('aging')"
+    >
+      Aging
+    </button>
+    <button
+      type="button"
+      role="tab"
+      [attr.aria-selected]="view() === 'account'"
+      class="h-8 rounded-[6px] px-3 text-[13px] font-semibold transition-colors"
+      [class]="view() === 'account' ? 'bg-cr-surface text-cr-ink shadow-card' : 'text-cr-ink-muted'"
+      (click)="setView('account')"
+    >
+      Statement of account
+    </button>
+  </div>
+
+  <div class="flex flex-wrap items-end gap-3">
+    <!-- Which way the money runs. Shown only where it changes the answer: an
+         income statement has no direction, it has revenue and costs. -->
+    @if (view() === 'aging' || view() === 'account') {
+      <app-field label="Direction">
+        <select
+          [class]="inputClass"
+          [value]="direction()"
+          (change)="setDirection($any($event.target).value)"
+        >
+          <option value="receivable">Receivables — owed to us</option>
+          <option value="payable">Payables — owed by us</option>
+        </select>
+      </app-field>
+    }
+
+    @if (view() === 'account') {
+      <app-field label="Account">
+        <select
+          [class]="inputClass"
+          [value]="customerId()"
+          (change)="chooseCustomer($any($event.target).value)"
+        >
+          <option value="">Choose an account…</option>
+          @for (customer of roster(); track customer.id) {
+            <option [value]="customer.id">{{ customer.name }}</option>
+          }
+        </select>
+      </app-field>
+    }
+
+    <!-- A balance sheet is a moment; the other three are a period. The fields
+         follow the question rather than being shown and ignored. -->
+    @if (view() === 'sheet') {
+      <app-field label="As of">
+        <input
+          type="date"
+          [class]="inputClass"
+          [value]="asOf()"
+          (change)="setAsOf($any($event.target).value)"
+        />
+      </app-field>
+    } @else if (view() !== 'aging') {
+      <app-field label="From">
+        <input
+          type="date"
+          [class]="inputClass"
+          [value]="from()"
+          (change)="setFrom($any($event.target).value)"
+        />
+      </app-field>
+
+      <app-field label="To">
+        <input
+          type="date"
+          [class]="inputClass"
+          [value]="to()"
+          (change)="setTo($any($event.target).value)"
+        />
+      </app-field>
+    }
+
+    <button
+      type="button"
+      class="flex h-10 items-center gap-1.5 rounded-control bg-cr-blue px-4 text-[14px] font-semibold text-cr-surface transition-colors hover:bg-cr-blue-hover"
+      (click)="print()"
+    >
+      <app-icon name="clipboard" [size]="16" />
+      Print or save as PDF
+    </button>
+  </div>
+</div>
+
+@if (error(); as message) {
+  <app-error-state [message]="message" (retry)="reload()" />
+} @else if (view() === 'income') {
+  <!-- ------------------------------------------------- The income statement -->
+  @if (income(); as statement) {
+    <article
+      class="cr-sheet mx-auto max-w-[820px] rounded-card bg-cr-surface p-8 shadow-card ring-1 ring-cr-line/60"
+    >
+      <header class="border-b border-cr-ink/10 pb-4">
+        <p class="text-[11px] font-bold tracking-[0.14em] text-cr-blue uppercase">
+          Income Statement
+        </p>
+        <h1 class="mt-1 text-[20px] leading-tight font-bold">
+          @if (statement.range.from) {
+            {{ fmt.date(statement.range.from) }} to {{ fmt.date(statement.range.to) }}
+          } @else {
+            Everything to {{ fmt.date(statement.range.to) }}
+          }
+        </h1>
+      </header>
+
+      <!-- Revenue, then the cost of providing it, then everything else — the
+           order a haulier reads it in, because the gap between the first two is
+           the only figure that says whether the hauling itself pays. -->
+      <section class="py-5">
+        <h2 class="cr-meta">Revenue</h2>
+
+        @if (statement.revenue.groups.length === 0) {
+          <p class="mt-2 text-[13px] text-cr-ink-muted">Nothing billed in this period.</p>
+        }
+
+        @for (group of statement.revenue.groups; track group.group) {
+          <div class="mt-3">
+            <p class="text-[13px] font-semibold">{{ group.group }}</p>
+            @for (account of group.accounts; track account.id) {
+              <div class="flex items-baseline gap-3 py-1 pl-4">
+                <span class="cr-num w-14 flex-none text-[12px] text-cr-ink-muted">{{
+                  account.code
+                }}</span>
+                <span class="min-w-0 flex-1 truncate text-[13px]">{{ account.name }}</span>
+                <span class="cr-num text-[13px]">{{
+                  fmt.pesos(account.balance_cents, statement.currency)
+                }}</span>
+              </div>
+            }
+            <div class="flex items-baseline gap-3 border-t border-cr-line/70 py-1 pl-4">
+              <span class="min-w-0 flex-1 text-[13px] font-semibold">{{ group.group }} total</span>
+              <span class="cr-num text-[13px] font-semibold">{{
+                fmt.pesos(group.total_cents, statement.currency)
+              }}</span>
+            </div>
+          </div>
+        }
+
+        <div class="mt-3 flex items-baseline gap-3 border-t-2 border-cr-ink/20 pt-2">
+          <span class="min-w-0 flex-1 text-[14px] font-bold">Total revenue</span>
+          <span class="cr-num text-[14px] font-bold">{{
+            fmt.pesos(statement.revenue.total_cents, statement.currency)
+          }}</span>
+        </div>
+      </section>
+
+      <section class="border-t border-cr-ink/10 py-5">
+        <h2 class="cr-meta">Expenses</h2>
+
+        @if (statement.expenses.groups.length === 0) {
+          <p class="mt-2 text-[13px] text-cr-ink-muted">Nothing spent in this period.</p>
+        }
+
+        @for (group of statement.expenses.groups; track group.group) {
+          <div class="mt-3">
+            <p class="text-[13px] font-semibold">{{ group.group }}</p>
+            @for (account of group.accounts; track account.id) {
+              <div class="flex items-baseline gap-3 py-1 pl-4">
+                <span class="cr-num w-14 flex-none text-[12px] text-cr-ink-muted">{{
+                  account.code
+                }}</span>
+                <span class="min-w-0 flex-1 truncate text-[13px]">{{ account.name }}</span>
+                <span class="cr-num text-[13px]">{{
+                  fmt.pesos(account.balance_cents, statement.currency)
+                }}</span>
+              </div>
+            }
+            <div class="flex items-baseline gap-3 border-t border-cr-line/70 py-1 pl-4">
+              <span class="min-w-0 flex-1 text-[13px] font-semibold">{{ group.group }} total</span>
+              <span class="cr-num text-[13px] font-semibold">{{
+                fmt.pesos(group.total_cents, statement.currency)
+              }}</span>
+            </div>
+          </div>
+        }
+
+        <div class="mt-3 flex items-baseline gap-3 border-t-2 border-cr-ink/20 pt-2">
+          <span class="min-w-0 flex-1 text-[14px] font-bold">Total expenses</span>
+          <span class="cr-num text-[14px] font-bold">{{
+            fmt.pesos(statement.expenses.total_cents, statement.currency)
+          }}</span>
+        </div>
+      </section>
+
+      <!-- The two gaps that matter, and they are different questions: gross
+           profit says whether the hauling pays, net income says whether the
+           business does. -->
+      <section class="cr-totals border-t-2 border-cr-ink/20 pt-5">
+        <dl class="ml-auto grid max-w-sm grid-cols-2 gap-y-2 text-[13px]">
+          @if (statement.cost_of_services_cents !== null) {
+            <dt class="text-cr-ink-muted">Cost of services</dt>
+            <dd class="cr-num text-right">
+              {{ fmt.pesos(statement.cost_of_services_cents, statement.currency) }}
+            </dd>
+
+            <dt class="font-semibold">Gross profit</dt>
+            <dd class="cr-num text-right font-semibold">
+              {{ fmt.pesos(statement.gross_profit_cents ?? 0, statement.currency) }}
+              @if (statement.gross_margin_pct !== null) {
+                <span class="ml-1 text-[12px] font-normal text-cr-ink-muted"
+                  >{{ statement.gross_margin_pct }}%</span
+                >
+              }
+            </dd>
+
+            <dt class="text-cr-ink-muted">Operating and other expenses</dt>
+            <dd class="cr-num text-right">
+              {{ fmt.pesos(otherExpenses() ?? 0, statement.currency) }}
+            </dd>
+          } @else {
+            <!-- The chart has no cost-of-services group, so there is no line to
+                 measure a margin against. A dash rather than a number, because
+                 a margin taken from the wrong half of the expenses is worse
+                 than no margin at all. -->
+            <dt class="text-cr-ink-muted">Cost of services</dt>
+            <dd class="text-right text-cr-ink-muted">not grouped in the chart</dd>
+          }
+
+          <dt class="border-t border-cr-ink/20 pt-2 text-[14px] font-bold">Net income</dt>
+          <dd
+            class="cr-num border-t border-cr-ink/20 pt-2 text-right text-[14px] font-bold"
+            [class.text-cr-red]="statement.net_income_cents < 0"
+          >
+            {{ fmt.pesos(statement.net_income_cents, statement.currency) }}
+            @if (statement.net_margin_pct !== null) {
+              <span class="ml-1 text-[12px] font-normal text-cr-ink-muted"
+                >{{ statement.net_margin_pct }}%</span
+              >
+            }
+          </dd>
+        </dl>
+      </section>
+    </article>
+  } @else {
+    <app-card>
+      <p class="text-[13px] text-cr-ink-muted">Reading the books…</p>
+    </app-card>
+  }
+} @else if (view() === 'sheet') {
+  <!-- ---------------------------------------------------- The balance sheet -->
+  @if (sheet(); as balance) {
+    <article
+      class="cr-sheet mx-auto max-w-[820px] rounded-card bg-cr-surface p-8 shadow-card ring-1 ring-cr-line/60"
+    >
+      <header class="flex items-start justify-between gap-4 border-b border-cr-ink/10 pb-4">
+        <div>
+          <p class="text-[11px] font-bold tracking-[0.14em] text-cr-blue uppercase">
+            Balance Sheet
+          </p>
+          <h1 class="mt-1 text-[20px] leading-tight font-bold">
+            As of {{ fmt.date(balance.as_of) }}
+          </h1>
+        </div>
+
+        <!-- True is the only acceptable answer, and the difference is printed
+             rather than assumed to be zero: a broken install should say how
+             broken rather than merely that it is. -->
+        <span
+          class="rounded-control px-2.5 py-1 text-[12px] font-semibold"
+          [class]="
+            balance.balanced ? 'bg-cr-success-bg text-cr-success' : 'bg-cr-red-bg text-cr-red'
+          "
+        >
+          @if (balance.balanced) {
+            Balanced
+          } @else {
+            Out by {{ fmt.pesos(balance.difference_cents, balance.currency) }}
+          }
+        </span>
+      </header>
+
+      <section class="py-5">
+        <h2 class="cr-meta">Assets</h2>
+
+        @for (group of balance.assets.groups; track group.group) {
+          <div class="mt-3">
+            <p class="text-[13px] font-semibold">{{ group.group }}</p>
+            @for (account of group.accounts; track account.id) {
+              <div class="flex items-baseline gap-3 py-1 pl-4">
+                <span class="cr-num w-14 flex-none text-[12px] text-cr-ink-muted">{{
+                  account.code
+                }}</span>
+                <span class="min-w-0 flex-1 truncate text-[13px]">{{ account.name }}</span>
+                <span class="cr-num text-[13px]">{{
+                  fmt.pesos(account.balance_cents, balance.currency)
+                }}</span>
+              </div>
+            }
+          </div>
+        }
+
+        <div class="mt-3 flex items-baseline gap-3 border-t-2 border-cr-ink/20 pt-2">
+          <span class="min-w-0 flex-1 text-[14px] font-bold">Total assets</span>
+          <span class="cr-num text-[14px] font-bold">{{
+            fmt.pesos(balance.assets.total_cents, balance.currency)
+          }}</span>
+        </div>
+      </section>
+
+      <section class="border-t border-cr-ink/10 py-5">
+        <h2 class="cr-meta">Liabilities</h2>
+
+        @if (balance.liabilities.groups.length === 0) {
+          <p class="mt-2 text-[13px] text-cr-ink-muted">Nothing owed.</p>
+        }
+
+        @for (group of balance.liabilities.groups; track group.group) {
+          <div class="mt-3">
+            <p class="text-[13px] font-semibold">{{ group.group }}</p>
+            @for (account of group.accounts; track account.id) {
+              <div class="flex items-baseline gap-3 py-1 pl-4">
+                <span class="cr-num w-14 flex-none text-[12px] text-cr-ink-muted">{{
+                  account.code
+                }}</span>
+                <span class="min-w-0 flex-1 truncate text-[13px]">{{ account.name }}</span>
+                <span class="cr-num text-[13px]">{{
+                  fmt.pesos(account.balance_cents, balance.currency)
+                }}</span>
+              </div>
+            }
+          </div>
+        }
+
+        <div class="mt-3 flex items-baseline gap-3 border-t border-cr-ink/20 pt-2">
+          <span class="min-w-0 flex-1 text-[13px] font-semibold">Total liabilities</span>
+          <span class="cr-num text-[13px] font-semibold">{{
+            fmt.pesos(balance.liabilities.total_cents, balance.currency)
+          }}</span>
+        </div>
+      </section>
+
+      <section class="border-t border-cr-ink/10 py-5">
+        <h2 class="cr-meta">Equity</h2>
+
+        @for (group of balance.equity.groups; track group.group) {
+          <div class="mt-3">
+            <p class="text-[13px] font-semibold">{{ group.group }}</p>
+            @for (account of group.accounts; track account.id) {
+              <div class="flex items-baseline gap-3 py-1 pl-4">
+                <span class="cr-num w-14 flex-none text-[12px] text-cr-ink-muted">{{
+                  account.code
+                }}</span>
+                <span class="min-w-0 flex-1 truncate text-[13px]">{{ account.name }}</span>
+                <span class="cr-num text-[13px]">{{
+                  fmt.pesos(account.balance_cents, balance.currency)
+                }}</span>
+              </div>
+            }
+          </div>
+        }
+
+        <!-- Named rather than hidden. There is no period close in this system,
+             so the result to date sits in equity because that is where it
+             belongs and nothing has moved it there. An accountant reading this
+             line knows immediately that the books have not been closed, which
+             is a fact about this install and not an error. -->
+        <div class="mt-3 flex items-baseline gap-3 py-1">
+          <span class="min-w-0 flex-1 text-[13px]">
+            Earnings not yet closed
+            <span class="block text-[12px] text-cr-ink-muted">
+              Everything earned and spent up to this date. No period close has swept it into
+              retained earnings.
+            </span>
+          </span>
+          <span class="cr-num text-[13px]">{{
+            fmt.pesos(balance.equity.earnings_not_closed_cents, balance.currency)
+          }}</span>
+        </div>
+
+        <div class="mt-3 flex items-baseline gap-3 border-t border-cr-ink/20 pt-2">
+          <span class="min-w-0 flex-1 text-[13px] font-semibold">Total equity</span>
+          <span class="cr-num text-[13px] font-semibold">{{
+            fmt.pesos(balance.equity.total_cents, balance.currency)
+          }}</span>
+        </div>
+      </section>
+
+      <section class="cr-totals border-t-2 border-cr-ink/20 pt-4">
+        <div class="flex items-baseline gap-3">
+          <span class="min-w-0 flex-1 text-[14px] font-bold">Liabilities and equity</span>
+          <span class="cr-num text-[14px] font-bold">{{
+            fmt.pesos(balance.liabilities_and_equity_cents, balance.currency)
+          }}</span>
+        </div>
+      </section>
+    </article>
+  } @else {
+    <app-card>
+      <p class="text-[13px] text-cr-ink-muted">Reading the books…</p>
+    </app-card>
+  }
+} @else if (view() === 'aging') {
+  <!-- ------------------------------------------------------------- The aging -->
+  @if (aging(); as report) {
+    <div class="flex flex-col gap-4">
+      <!-- Money nine days late and money ninety days late are different
+           problems with different phone calls behind them. -->
+      <div class="cr-aging grid grid-cols-2 gap-3 sm:grid-cols-5">
+        @for (bucket of agingBuckets(); track bucket.label) {
+          <div class="rounded-card bg-cr-surface p-4 shadow-card ring-1 ring-cr-line/60">
+            <p class="cr-meta">{{ bucket.label }}</p>
+            <p
+              class="cr-num mt-2 text-[20px] leading-none font-semibold"
+              [class.text-cr-red]="bucket.late && bucket.cents > 0"
+            >
+              {{ fmt.money(bucket.cents, report.currency) }}
+            </p>
+          </div>
+        }
+      </div>
+
+      <app-card
+        [heading]="direction() === 'receivable' ? 'Owed to us' : 'Owed by us'"
+        icon="wallet"
+        [hint]="fmt.pesos(report.total_cents, report.currency)"
+        [padded]="false"
+      >
+        @if (report.by_counterparty.length === 0) {
+          <div class="p-4">
+            <app-empty-state
+              icon="wallet"
+              title="Nothing outstanding"
+              body="Every document in this direction has been settled."
+            />
+          </div>
+        } @else {
+          <div class="overflow-x-auto">
+            <table class="w-full text-[13px]">
+              <thead>
+                <tr class="border-b border-cr-line text-left">
+                  <th class="cr-meta px-4 py-2">
+                    {{ direction() === 'receivable' ? 'Customer' : 'Supplier' }}
+                  </th>
+                  <th class="cr-meta px-4 py-2 text-right">Not due</th>
+                  <th class="cr-meta px-4 py-2 text-right">1–30</th>
+                  <th class="cr-meta px-4 py-2 text-right">31–60</th>
+                  <th class="cr-meta px-4 py-2 text-right">61–90</th>
+                  <th class="cr-meta px-4 py-2 text-right">90+</th>
+                  <th class="cr-meta px-4 py-2 text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-cr-line/70">
+                <!-- Worst first, from the API: whoever owes the most is the
+                     call to make. -->
+                @for (row of report.by_counterparty; track row.counterparty) {
+                  <tr>
+                    <td class="px-4 py-2 font-semibold">{{ row.counterparty }}</td>
+                    <td class="cr-num px-4 py-2 text-right">
+                      {{ row.current ? fmt.pesos(row.current) : '—' }}
+                    </td>
+                    <td class="cr-num px-4 py-2 text-right">
+                      {{ row['1_30'] ? fmt.pesos(row['1_30']) : '—' }}
+                    </td>
+                    <td class="cr-num px-4 py-2 text-right">
+                      {{ row['31_60'] ? fmt.pesos(row['31_60']) : '—' }}
+                    </td>
+                    <td class="cr-num px-4 py-2 text-right">
+                      {{ row['61_90'] ? fmt.pesos(row['61_90']) : '—' }}
+                    </td>
+                    <td class="cr-num px-4 py-2 text-right text-cr-red">
+                      {{ row.over_90 ? fmt.pesos(row.over_90) : '—' }}
+                    </td>
+                    <td class="cr-num px-4 py-2 text-right font-semibold">
+                      {{ fmt.pesos(row.total_cents) }}
+                    </td>
+                  </tr>
+                }
+              </tbody>
+              <tfoot>
+                <tr class="border-t-2 border-cr-ink/20">
+                  <td class="px-4 py-2 font-bold" colspan="6">Total outstanding</td>
+                  <td class="cr-num px-4 py-2 text-right font-bold">
+                    {{ fmt.pesos(report.total_cents, report.currency) }}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        }
+      </app-card>
+    </div>
+  } @else {
+    <app-card>
+      <p class="text-[13px] text-cr-ink-muted">Working out what is outstanding…</p>
+    </app-card>
+  }
+} @else {
+  <!-- --------------------------------------------- The statement of account -->
+  @if (account(); as statement) {
+    <article
+      class="cr-sheet mx-auto max-w-[820px] rounded-card bg-cr-surface p-8 shadow-card ring-1 ring-cr-line/60"
+    >
+      <!-- Both parties. A statement that leaves the building is filed by
+           somebody with a drawer full of them from other hauliers. -->
+      <header
+        class="flex flex-wrap items-start justify-between gap-6 border-b border-cr-ink/10 pb-6"
+      >
+        <div class="flex items-start gap-4">
+          @if (statement.issuer.logo_url) {
+            <img
+              [src]="statement.issuer.logo_url"
+              [alt]="(statement.issuer.name ?? 'Company') + ' logo'"
+              class="h-14 w-14 rounded-control object-contain"
+            />
+          } @else {
+            <span
+              class="flex h-14 w-14 items-center justify-center rounded-control bg-cr-tint text-[18px] font-bold text-cr-blue"
+            >
+              {{ initials() }}
+            </span>
+          }
+
+          <div class="min-w-0">
+            <h1 class="text-[20px] leading-tight font-bold">{{ statement.issuer.name }}</h1>
+            @if (statement.issuer.address) {
+              <p class="mt-0.5 text-[13px] text-cr-ink-muted">{{ statement.issuer.address }}</p>
+            }
+            <p class="mt-0.5 text-[13px] text-cr-ink-muted">
+              @if (statement.issuer.contact_phone) {
+                <span>{{ statement.issuer.contact_phone }}</span>
+              }
+              @if (statement.issuer.contact_email) {
+                <span> · {{ statement.issuer.contact_email }}</span>
+              }
+            </p>
+            @if (statement.issuer.tin) {
+              <p class="cr-num mt-1 text-[12px] text-cr-ink-muted">
+                TIN {{ statement.issuer.tin }}
+              </p>
+            }
+          </div>
+        </div>
+
+        <div class="text-right">
+          <p class="text-[11px] font-bold tracking-[0.14em] text-cr-blue uppercase">
+            {{ statement.title }}
+          </p>
+          <p class="mt-1 text-[15px] font-semibold">
+            @if (statement.range.from) {
+              {{ fmt.date(statement.range.from) }} – {{ fmt.date(statement.range.to) }}
+            } @else {
+              To {{ fmt.date(statement.range.to) }}
+            }
+          </p>
+        </div>
+      </header>
+
+      <section class="grid grid-cols-1 gap-6 border-b border-cr-ink/10 py-6 sm:grid-cols-2">
+        <div>
+          <h2 class="cr-meta">Account</h2>
+          <p class="mt-1 text-[15px] font-semibold">{{ statement.account.name }}</p>
+          @if (statement.account.address) {
+            <p class="text-[13px] text-cr-ink-muted">{{ statement.account.address }}</p>
+          }
+          @if (statement.account.contact) {
+            <p class="text-[13px] text-cr-ink-muted">{{ statement.account.contact }}</p>
+          }
+          @if (statement.account.tin) {
+            <p class="cr-num mt-1 text-[12px] text-cr-ink-muted">TIN {{ statement.account.tin }}</p>
+          }
+        </div>
+
+        <dl class="grid grid-cols-2 gap-y-1.5 text-[13px] sm:justify-self-end">
+          <dt class="cr-meta">Opening balance</dt>
+          <dd class="cr-num text-right">
+            {{ fmt.pesos(statement.opening_balance_cents, statement.currency) }}
+          </dd>
+
+          <dt class="cr-meta">Charges</dt>
+          <dd class="cr-num text-right">
+            {{ fmt.pesos(statement.charges_cents, statement.currency) }}
+          </dd>
+
+          <dt class="cr-meta">Payments and credits</dt>
+          <dd class="cr-num text-right">
+            {{ fmt.pesos(statement.credits_cents, statement.currency) }}
+          </dd>
+        </dl>
+      </section>
+
+      <!-- The running account. This is the whole document: an aging report says
+           ₱48,000 is thirty days late, and a statement says how it got there.
+           When a customer disputes a figure the disagreement is always about
+           one line. -->
+      <section class="py-6">
+        <div class="overflow-x-auto">
+          <table class="w-full text-[13px]">
+            <thead>
+              <tr class="border-b border-cr-ink/20 text-left">
+                <th class="cr-meta py-2">Date</th>
+                <th class="cr-meta py-2">Reference</th>
+                <th class="cr-meta py-2">Detail</th>
+                <th class="cr-meta py-2 text-right">Charge</th>
+                <th class="cr-meta py-2 text-right">Credit</th>
+                <th class="cr-meta py-2 text-right">Balance</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-cr-line/70">
+              @if (statement.opening_balance_cents !== 0) {
+                <tr>
+                  <td class="py-2 text-cr-ink-muted" colspan="5">Balance brought forward</td>
+                  <td class="cr-num py-2 text-right font-semibold">
+                    {{ fmt.pesos(statement.opening_balance_cents, statement.currency) }}
+                  </td>
+                </tr>
+              }
+
+              @for (line of statement.lines; track line.reference + line.kind + line.date) {
+                <tr>
+                  <td class="cr-num py-2 whitespace-nowrap">{{ fmt.date(line.date) }}</td>
+                  <td class="py-2 font-semibold">{{ line.reference }}</td>
+                  <td class="py-2 text-cr-ink-muted">
+                    {{ line.detail }}
+                    @if (line.due_at) {
+                      <span class="block text-[12px]">due {{ fmt.date(line.due_at) }}</span>
+                    }
+                  </td>
+                  <td class="cr-num py-2 text-right">
+                    {{ line.charge_cents ? fmt.pesos(line.charge_cents) : '—' }}
+                  </td>
+                  <td class="cr-num py-2 text-right">
+                    {{ line.credit_cents ? fmt.pesos(line.credit_cents) : '—' }}
+                  </td>
+                  <td class="cr-num py-2 text-right font-semibold">
+                    {{ fmt.pesos(line.balance_cents) }}
+                  </td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td class="py-6 text-center text-cr-ink-muted" colspan="6">
+                    Nothing on this account in this period.
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="cr-totals border-t-2 border-cr-ink/20 pt-5">
+        <div class="flex flex-wrap items-end justify-between gap-4">
+          <div class="min-w-0">
+            <p class="cr-meta">{{ statement.balance_label }}</p>
+            <p class="mt-0.5 text-[13px] text-cr-ink-muted">{{ statement.closing_in_words }}</p>
+          </div>
+          <p class="cr-num text-[26px] leading-none font-bold">
+            {{ fmt.pesos(statement.closing_balance_cents, statement.currency) }}
+          </p>
+        </div>
+      </section>
+
+      <!-- The collections half of the page: a balance is a number to chase, and
+           how long it has been outstanding is what decides whether the call is
+           a reminder or a conversation. -->
+      <section class="cr-aging mt-6 rounded-card bg-cr-tint p-4">
+        <h2 class="cr-meta">Aging of the balance</h2>
+        <dl class="mt-2 grid grid-cols-2 gap-y-1.5 text-[13px] sm:grid-cols-5 sm:gap-x-4">
+          <div>
+            <dt class="text-cr-ink-muted">Not yet due</dt>
+            <dd class="cr-num font-semibold">{{ fmt.pesos(statement.aging.current) }}</dd>
+          </div>
+          <div>
+            <dt class="text-cr-ink-muted">1–30 days</dt>
+            <dd class="cr-num font-semibold">{{ fmt.pesos(statement.aging.days_1_30) }}</dd>
+          </div>
+          <div>
+            <dt class="text-cr-ink-muted">31–60 days</dt>
+            <dd class="cr-num font-semibold">{{ fmt.pesos(statement.aging.days_31_60) }}</dd>
+          </div>
+          <div>
+            <dt class="text-cr-ink-muted">61–90 days</dt>
+            <dd class="cr-num font-semibold">{{ fmt.pesos(statement.aging.days_61_90) }}</dd>
+          </div>
+          <div>
+            <dt class="text-cr-ink-muted">Over 90 days</dt>
+            <dd class="cr-num font-semibold text-cr-red">
+              {{ fmt.pesos(statement.aging.over_90) }}
+            </dd>
+          </div>
+        </dl>
+      </section>
+    </article>
+  } @else {
+    <app-card>
+      <app-empty-state
+        icon="clipboard"
+        title="Choose an account"
+        body="A statement of account is one firm's running balance — the document a collections call is made from. Pick an account above."
+      />
+    </app-card>
+  }
+}

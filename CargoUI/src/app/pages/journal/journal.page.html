@@ -1,0 +1,387 @@
+<div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+  <!-- The four questions somebody opens a journal with: when, what kind, which
+       state, and which account. Laid out as filters rather than tabs because
+       they combine — "fuel entries against 5010 last month" is one question. -->
+  <div class="flex flex-wrap items-end gap-3">
+    <app-field label="From">
+      <input
+        type="date"
+        [class]="inputClass"
+        [value]="filters().from ?? ''"
+        (change)="setFilter('from', $any($event.target).value)"
+      />
+    </app-field>
+
+    <app-field label="To">
+      <input
+        type="date"
+        [class]="inputClass"
+        [value]="filters().to ?? ''"
+        (change)="setFilter('to', $any($event.target).value)"
+      />
+    </app-field>
+
+    <app-field label="Kind">
+      <select
+        [class]="inputClass"
+        [value]="filters().category ?? ''"
+        (change)="setFilter('category', $any($event.target).value)"
+      >
+        <option value="">Every kind</option>
+        @for (option of categories(); track option.value) {
+          <option [value]="option.value">{{ option.label }}</option>
+        }
+      </select>
+    </app-field>
+
+    <app-field label="Account">
+      <select
+        [class]="inputClass"
+        [value]="filters().account_id ?? ''"
+        (change)="setFilter('account_id', $any($event.target).value)"
+      >
+        <option value="">Every account</option>
+        @for (account of accounts(); track account.id) {
+          <option [value]="account.id">{{ account.label }}</option>
+        }
+      </select>
+    </app-field>
+
+    <app-field label="State">
+      <select
+        [class]="inputClass"
+        [value]="filters().status ?? ''"
+        (change)="setFilter('status', $any($event.target).value)"
+      >
+        <option value="">Every state</option>
+        <option value="draft">Drafts</option>
+        <option value="posted">Posted</option>
+        <option value="void">Voided</option>
+      </select>
+    </app-field>
+  </div>
+
+  <button
+    type="button"
+    class="flex h-10 flex-none items-center gap-1.5 rounded-control bg-cr-blue px-4 text-[14px] font-semibold text-cr-surface transition-colors hover:bg-cr-blue-hover"
+    (click)="create()"
+  >
+    <app-icon name="plus" [size]="16" />
+    New entry
+  </button>
+</div>
+
+@if (notice(); as message) {
+  <div
+    class="mb-4 flex items-start gap-2 rounded-card bg-cr-tint px-4 py-3 text-[13px] text-cr-ink"
+    role="status"
+  >
+    <app-icon name="clipboard" [size]="16" class="mt-0.5 text-cr-blue" />
+    <p class="flex-1">{{ message }}</p>
+    <button type="button" class="text-[12px] font-semibold text-cr-blue" (click)="notice.set(null)">
+      Dismiss
+    </button>
+  </div>
+}
+
+@if (error(); as message) {
+  <app-error-state [message]="message" />
+} @else {
+  <app-card
+    heading="Journal"
+    icon="clipboard"
+    [hint]="(rows()?.length ?? 0) + ' entries'"
+    [padded]="false"
+  >
+    <app-data-table
+      [columns]="columns"
+      [rows]="rows()"
+      [minWidth]="900"
+      rowAction="Open entry"
+      emptyIcon="clipboard"
+      emptyTitle="Nothing in the journal yet"
+      emptyBody="Write the first entry — a date, what kind of transaction it is, and its two sides."
+      (open)="edit($event)"
+    />
+  </app-card>
+
+  <!-- The per-row verbs. Below the table rather than crammed into it: a
+       journal row is already six columns wide, and posting and voiding are
+       decisions rather than navigation — each wants its own label and its own
+       confirmation, which a 32px icon button cannot carry. -->
+  @if (rows(); as entries) {
+    @if (entries.length > 0) {
+      <app-card heading="What can be done with these" icon="tag" class="mt-4">
+        <div class="flex flex-col divide-y divide-cr-line/70">
+          @for (entry of entries; track entry.id) {
+            <div class="flex flex-wrap items-center gap-3 py-2.5">
+              <div class="min-w-0 flex-1">
+                <p class="cr-num text-[13px] font-semibold">{{ entry.reference }}</p>
+                <p class="truncate text-[12px] text-cr-ink-muted">
+                  {{ entry.memo }}
+                  @if (entry.status === 'void' && entry.void_reason) {
+                    · voided: {{ entry.void_reason }}
+                  }
+                </p>
+              </div>
+
+              @if (entry.can_edit) {
+                <button
+                  type="button"
+                  class="h-8 rounded-control px-3 text-[12px] font-semibold text-cr-blue transition-colors hover:bg-cr-tint"
+                  (click)="edit(entry)"
+                >
+                  Edit draft
+                </button>
+              }
+              @if (entry.can_post) {
+                <button
+                  type="button"
+                  class="h-8 rounded-control bg-cr-blue px-3 text-[12px] font-semibold text-cr-surface transition-colors hover:bg-cr-blue-hover"
+                  (click)="post(entry)"
+                >
+                  Post
+                </button>
+                <button
+                  type="button"
+                  class="h-8 rounded-control px-3 text-[12px] font-semibold text-cr-ink-muted transition-colors hover:bg-cr-red-bg hover:text-cr-red"
+                  (click)="remove(entry)"
+                >
+                  Delete
+                </button>
+              }
+              @if (entry.can_void) {
+                <button
+                  type="button"
+                  class="h-8 rounded-control px-3 text-[12px] font-semibold text-cr-red transition-colors hover:bg-cr-red-bg"
+                  (click)="startVoid(entry)"
+                >
+                  Void
+                </button>
+              }
+              @if (!entry.can_edit && !entry.can_post && !entry.can_void) {
+                <span class="text-[12px] text-cr-ink-muted">Closed out</span>
+              }
+            </div>
+          }
+        </div>
+      </app-card>
+    }
+  }
+}
+
+<!-- The entry form. Its own dialog because an entry is a head and a variable
+     set of sides, with a rule tying them together that has to be shown while
+     somebody types. -->
+<app-modal
+  [open]="formOpen()"
+  (openChange)="formOpen.set($event)"
+  [title]="editing() ? 'Edit ' + editing()!.reference : 'New journal entry'"
+  subtitle="Debits on the left of the ledger, credits on the right. The two have to agree."
+  icon="clipboard"
+  size="lg"
+>
+  <form [formGroup]="form" class="flex flex-col gap-4">
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <app-field label="Date" required>
+        <input type="date" formControlName="entry_date" [class]="inputClass" />
+      </app-field>
+
+      <app-field label="Kind" required hint="What sort of transaction this is.">
+        <select formControlName="category" [class]="inputClass">
+          @for (option of categories(); track option.value) {
+            <option [value]="option.value">{{ option.label }}</option>
+          }
+        </select>
+      </app-field>
+
+      <app-field label="Narration" required hint="What it was for, in a sentence.">
+        <input
+          type="text"
+          formControlName="memo"
+          placeholder="Diesel, 400 L at the Iponan pump"
+          [class]="inputClass"
+        />
+      </app-field>
+    </div>
+
+    <!-- The sides. Each line is an account, a direction and an amount — never
+         two amount columns, because "debit 500 and credit 200" is not a line
+         anybody would write. -->
+    <div class="rounded-card ring-1 ring-cr-line/60">
+      <header class="flex items-center gap-3 border-b border-cr-line px-4 py-2.5">
+        <h3 class="text-[14px] font-semibold">Lines</h3>
+        <button
+          type="button"
+          class="ml-auto flex h-8 items-center gap-1 rounded-control px-2 text-[12px] font-semibold text-cr-blue transition-colors hover:bg-cr-tint"
+          (click)="addLine()"
+        >
+          <app-icon name="plus" [size]="14" />
+          Add line
+        </button>
+      </header>
+
+      <div class="flex flex-col divide-y divide-cr-line/70" formArrayName="lines">
+        @for (line of lines.controls; track $index) {
+          <div class="grid grid-cols-1 gap-2 p-3 sm:grid-cols-12" [formGroupName]="$index">
+            <div class="sm:col-span-5">
+              <app-field label="Account" required>
+                <select formControlName="account_id" [class]="inputClass">
+                  <option value="">Choose an account</option>
+                  @for (account of accounts(); track account.id) {
+                    <option [value]="account.id">{{ account.label }}</option>
+                  }
+                </select>
+              </app-field>
+            </div>
+
+            <div class="sm:col-span-3">
+              <app-field label="Side" required>
+                <select formControlName="side" [class]="inputClass">
+                  <option value="debit">Debit</option>
+                  <option value="credit">Credit</option>
+                </select>
+              </app-field>
+            </div>
+
+            <div class="sm:col-span-3">
+              <app-field label="Amount (₱)" required>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  formControlName="amount"
+                  [class]="inputClass"
+                />
+              </app-field>
+            </div>
+
+            <div class="flex items-end sm:col-span-1">
+              <button
+                type="button"
+                class="flex h-10 w-full items-center justify-center rounded-control text-cr-ink-muted transition-colors hover:bg-cr-red-bg hover:text-cr-red disabled:opacity-40"
+                [disabled]="lines.length <= 2"
+                [attr.aria-label]="'Remove line ' + ($index + 1)"
+                (click)="removeLine($index)"
+              >
+                <app-icon name="close" [size]="16" />
+              </button>
+            </div>
+          </div>
+        }
+      </div>
+
+      <!-- The running check, in the place a ledger keeps it: under the lines,
+           both columns, and the difference when there is one. The figure is
+           what finds a transposed number — "does not balance" is not a clue. -->
+      <footer
+        class="flex flex-wrap items-center gap-4 border-t border-cr-line px-4 py-3"
+        [class.bg-cr-red-bg]="!balanced() && totalDebits() + totalCredits() > 0"
+      >
+        <dl class="flex gap-6 text-[13px]">
+          <div>
+            <dt class="cr-meta">Debits</dt>
+            <dd class="cr-num font-semibold">{{ fmt.money(totalDebits()) }}</dd>
+          </div>
+          <div>
+            <dt class="cr-meta">Credits</dt>
+            <dd class="cr-num font-semibold">{{ fmt.money(totalCredits()) }}</dd>
+          </div>
+        </dl>
+
+        <p class="ml-auto text-[13px] font-semibold" [class.text-cr-red]="!balanced()">
+          @if (balanced()) {
+            <span class="text-cr-success">The two sides agree.</span>
+          } @else if (totalDebits() + totalCredits() === 0) {
+            <span class="text-cr-ink-muted">Enter both sides.</span>
+          } @else {
+            Out by {{ fmt.money(difference() > 0 ? difference() : -difference()) }} ({{
+              difference() > 0 ? 'more debits' : 'more credits'
+            }})
+          }
+        </p>
+      </footer>
+    </div>
+
+    @if (formError(); as message) {
+      <p
+        class="rounded-control bg-cr-red-bg px-3 py-2 text-[13px] font-medium text-cr-red"
+        role="alert"
+      >
+        {{ message }}
+      </p>
+    }
+  </form>
+
+  <ng-container modal-footer>
+    <!-- Two ways out, and the difference matters: a draft is somebody's work in
+         progress and changes no balance, while posting is final. -->
+    <button
+      type="button"
+      class="h-10 rounded-control px-4 text-[14px] font-semibold text-cr-ink-muted transition-colors hover:bg-cr-tint"
+      (click)="formOpen.set(false)"
+    >
+      Cancel
+    </button>
+    <button
+      type="button"
+      class="h-10 rounded-control px-4 text-[14px] font-semibold text-cr-blue ring-1 ring-cr-line transition-colors hover:bg-cr-tint disabled:opacity-50"
+      [disabled]="saving()"
+      (click)="save(false)"
+    >
+      Save draft
+    </button>
+    <button
+      type="button"
+      class="h-10 rounded-control bg-cr-blue px-4 text-[14px] font-semibold text-cr-surface transition-colors hover:bg-cr-blue-hover disabled:opacity-50"
+      [disabled]="saving() || !balanced()"
+      (click)="save(true)"
+    >
+      {{ saving() ? 'Saving…' : 'Post entry' }}
+    </button>
+  </ng-container>
+</app-modal>
+
+<!-- Voiding. A dialog rather than a confirmation, because the reason is the
+     point: it stays on the entry as the record of the correction. -->
+<app-modal
+  [open]="voiding() !== null"
+  (openChange)="!$event && voiding.set(null)"
+  [title]="'Void ' + (voiding()?.reference ?? '')"
+  subtitle="The entry and its lines stay in the books, stop counting, and keep your reason."
+  icon="incident"
+  [danger]="true"
+  size="sm"
+>
+  <app-field
+    label="Why"
+    required
+    [error]="voidError()"
+    hint="Whoever reads the books next sees this instead of ringing to ask."
+  >
+    <input
+      type="text"
+      [class]="inputClass"
+      placeholder="Posted against the wrong pump"
+      [value]="voidReason()"
+      (input)="voidReason.set($any($event.target).value)"
+    />
+  </app-field>
+
+  <ng-container modal-footer>
+    <button
+      type="button"
+      class="h-10 rounded-control px-4 text-[14px] font-semibold text-cr-ink-muted transition-colors hover:bg-cr-tint"
+      (click)="voiding.set(null)"
+    >
+      Keep it
+    </button>
+    <button
+      type="button"
+      class="h-10 rounded-control bg-cr-red px-4 text-[14px] font-semibold text-cr-surface transition-colors hover:opacity-90"
+      (click)="confirmVoid()"
+    >
+      Void entry
+    </button>
+  </ng-container>
+</app-modal>

@@ -56,6 +56,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Front End URL
+    |--------------------------------------------------------------------------
+    |
+    | Where CargoUI is served from. Distinct from APP_URL, which is the API:
+    | in development they are two ports, and in production they are usually two
+    | hosts. A password reset link has to point at the web app rather than at
+    | the API, because what the person following it needs is a form.
+    |
+    | Get this wrong and the link in the email 404s — so it defaults to the
+    | dev server's address rather than to APP_URL, which would silently produce
+    | a link to an endpoint that only speaks JSON.
+    |
+    */
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:4200'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |
